@@ -25,8 +25,23 @@ build/
 blog.db
 *.db
 *.sqlite
+tmp/
+vendor/
 
 # Environment
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
+
+# Config (contains secrets)
+internal/config/config.yml
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage.out
+coverage.html

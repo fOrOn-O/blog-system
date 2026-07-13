@@ -104,7 +104,10 @@ func createDefaultAdmin() {
 		return
 	}
 
-	hashedPassword, err := auth.HashPassword("admin123456")
+	// 从环境变量获取管理员密码，如果未设置则使用默认值（仅用于开发环境）
+	adminPassword := config.GetEnv("BLOG_ADMIN_PASSWORD", "admin123456")
+
+	hashedPassword, err := auth.HashPassword(adminPassword)
 	if err != nil {
 		log.Printf("创建默认管理员失败: %v", err)
 		return
@@ -123,5 +126,7 @@ func createDefaultAdmin() {
 		return
 	}
 
-	log.Println("默认管理员账号已创建: admin / admin123456")
+	// 安全提示：不在日志中输出密码
+	log.Println("默认管理员账号已创建 (用户名: admin)")
+	log.Println("请使用环境变量 BLOG_ADMIN_PASSWORD 设置管理员密码")
 }
