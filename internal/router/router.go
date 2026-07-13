@@ -16,6 +16,9 @@ func SetupRouter() *gin.Engine {
 	r.Use(middleware.CORS())
 	r.Use(middleware.Logger())
 
+	// 静态文件服务（上传的文件）
+	r.Static("/uploads", "./uploads")
+
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler()
@@ -23,6 +26,8 @@ func SetupRouter() *gin.Engine {
 	commentHandler := handler.NewCommentHandler()
 	likeHandler := handler.NewLikeHandler()
 	favoriteHandler := handler.NewFavoriteHandler()
+	tagHandler := handler.NewTagHandler()
+	uploadHandler := handler.NewUploadHandler()
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
@@ -41,6 +46,10 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 		}
+
+		// 标签公开路由
+		api.GET("/tags", tagHandler.GetAll)
+		api.GET("/tags/:id", tagHandler.GetByID)
 
 		// 文章公开路由
 		articles := api.Group("/articles")
@@ -84,6 +93,9 @@ func SetupRouter() *gin.Engine {
 			protected.POST("/articles/:id/favorite", favoriteHandler.Favorite)
 			protected.DELETE("/articles/:id/favorite", favoriteHandler.Unfavorite)
 			protected.GET("/articles/:id/favorite", favoriteHandler.IsFavorited)
+
+			// 图片上传路由
+			protected.POST("/upload/image", uploadHandler.UploadImage)
 		}
 
 		// 管理员路由
@@ -91,6 +103,11 @@ func SetupRouter() *gin.Engine {
 		admin.Use(middleware.AuthRequired(), middleware.AdminRequired())
 		{
 			admin.GET("/users", userHandler.ListUsers)
+
+			// 标签管理路由（管理员）
+			admin.POST("/tags", tagHandler.Create)
+			admin.PUT("/tags/:id", tagHandler.Update)
+			admin.DELETE("/tags/:id", tagHandler.Delete)
 		}
 	}
 

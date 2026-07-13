@@ -38,6 +38,15 @@ func Success(c *gin.Context, data interface{}) {
 	})
 }
 
+// SuccessWithMessage 返回带消息的成功响应
+func SuccessWithMessage(c *gin.Context, message string, data interface{}) {
+	c.JSON(http.StatusOK, Response{
+		Code:    http.StatusOK,
+		Message: message,
+		Data:    data,
+	})
+}
+
 // Created 返回创建成功响应
 func Created(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusCreated, Response{
