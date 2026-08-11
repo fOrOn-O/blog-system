@@ -3,6 +3,8 @@ package repository
 import (
 	"blog-system/internal/database"
 	"blog-system/internal/model"
+
+	"gorm.io/gorm"
 )
 
 // ArticleRepository 文章数据访问层
@@ -30,9 +32,36 @@ func (r *ArticleRepository) Update(article *model.Article) error {
 	return database.DB.Save(article).Error
 }
 
-// Delete 删除文章（软删除）
+// Delete 删除文章（级联删除关联数据）
 func (r *ArticleRepository) Delete(id uint) error {
-	return database.DB.Delete(&model.Article{}, id).Error
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		// 删除文章的点赞记录
+		if err := tx.Where("article_id = ?", id).Delete(&model.Like{}).Error; err != nil {
+			return err
+		}
+
+		// 删除文章的收藏记录
+		if err := tx.Where("article_id = ?", id).Delete(&model.Favorite{}).Error; err != nil {
+			return err
+		}
+
+		// 删除文章的评论
+		if err := tx.Where("article_id = ?", id).Delete(&model.Comment{}).Error; err != nil {
+			return err
+		}
+
+		// 删除文章的标签关联
+		if err := tx.Exec("DELETE FROM article_tags WHERE article_id = ?", id).Error; err != nil {
+			return err
+		}
+
+		// 最后删除文章本身
+		if err := tx.Delete(&model.Article{}, id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 // List 获取文章列表（分页）

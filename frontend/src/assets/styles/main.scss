@@ -1,0 +1,392 @@
+@use 'sass:color';
+
+// ═══════════════════════════════════════════════════════
+//  BLOG SYSTEM — Design Tokens (柔和配色版)
+//  Identity: Terminal × Editorial
+// ═══════════════════════════════════════════════════════
+
+// ── Color Palette (柔和配色) ────────────────────────────
+$color-paper:       #F8F9FA;      // 更柔和的浅灰背景
+$color-ink:         #2D3748;      // 柔和的深灰文字
+$color-accent:      #5B8DEF;      // 柔和蓝作为主色调
+$color-accent-light:#EBF2FF;      // 浅蓝背景
+$color-slate:       #8896AB;      // 柔和的灰蓝
+$color-hairline:    #E8ECF0;      // 柔和的边框色
+$color-editor:      #2D3748;      // 代码块背景
+$color-editor-text: #E2E8F0;      // 代码块文字
+$color-success:     #68D391;      // 柔和绿
+$color-warning:     #F6AD55;      // 柔和橙
+$color-danger:      #FC8181;      // 柔和红
+$color-white:       #FFFFFF;
+
+// ── Typography ─────────────────────────────────────────
+$font-mono:    'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+$font-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+// ── Spacing Scale ──────────────────────────────────────
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;
+$space-5: 20px;
+$space-6: 24px;
+$space-8: 32px;
+$space-10: 40px;
+$space-12: 48px;
+$space-16: 64px;
+
+// ── Shadows (更柔和) ───────────────────────────────────
+$shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+$shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+$shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.06);
+
+// ── Radius ─────────────────────────────────────────────
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 8px;
+
+// ═══════════════════════════════════════════════════════
+//  Global Reset & Base
+// ═══════════════════════════════════════════════════════
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: $font-body;
+  background-color: $color-paper;
+  color: $color-ink;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+a {
+  color: $color-accent;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Typography System
+// ═══════════════════════════════════════════════════════
+
+.label {
+  font-family: $font-mono;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $color-slate;
+}
+
+.eyebrow {
+  @extend .label;
+  color: $color-accent;
+  margin-bottom: $space-2;
+  display: inline-block;
+}
+
+.display {
+  font-family: $font-mono;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.prose {
+  font-family: $font-body;
+  font-size: 16px;
+  line-height: 1.75;
+  color: $color-ink;
+
+  p {
+    margin-bottom: $space-4;
+  }
+
+  h2, h3, h4 {
+    margin-top: $space-8;
+    margin-bottom: $space-4;
+    font-weight: 600;
+  }
+
+  code {
+    font-family: $font-mono;
+    font-size: 0.9em;
+    background: #EDF2F7;
+    padding: 2px 6px;
+    border-radius: $radius-sm;
+    color: $color-accent;
+  }
+
+  pre {
+    background: $color-editor;
+    color: $color-editor-text;
+    padding: $space-5;
+    border-radius: $radius-md;
+    overflow-x: auto;
+    margin: $space-6 0;
+
+    code {
+      background: none;
+      padding: 0;
+      color: inherit;
+    }
+  }
+
+  blockquote {
+    border-left: 3px solid $color-accent;
+    padding-left: $space-5;
+    color: $color-slate;
+    margin: $space-6 0;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Layout
+// ═══════════════════════════════════════════════════════
+
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 $space-6;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: $space-8;
+  align-items: start;
+}
+
+.main-column {
+  min-width: 0;
+}
+
+.sidebar-column {
+  position: sticky;
+  top: 88px;
+}
+
+// ═══════════════════════════════════════════════════════
+//  Components
+// ═══════════════════════════════════════════════════════
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: $space-4;
+  margin-bottom: $space-6;
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: $color-hairline;
+  }
+}
+
+.card {
+  background: $color-white;
+  border: 1px solid $color-hairline;
+  border-radius: $radius-lg;
+  padding: $space-6;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    box-shadow: $shadow-md;
+    border-color: color.adjust($color-hairline, $lightness: -3%);
+  }
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: $font-mono;
+  font-size: 12px;
+  font-weight: 500;
+  padding: $space-1 $space-3;
+  background: $color-paper;
+  border: 1px solid $color-hairline;
+  border-radius: $radius-sm;
+  color: $color-slate;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    border-color: $color-accent;
+    color: $color-accent;
+    background: $color-accent-light;
+  }
+}
+
+.meta {
+  font-family: $font-mono;
+  font-size: 12px;
+  color: $color-slate;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+
+  .dot {
+    color: $color-hairline;
+  }
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: $space-2;
+
+  .stat-value {
+    font-family: $font-mono;
+    font-size: 24px;
+    font-weight: 700;
+    color: $color-ink;
+    letter-spacing: -0.02em;
+  }
+
+  .stat-label {
+    @extend .label;
+    font-size: 10px;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Element Plus Overrides (柔和配色)
+// ═══════════════════════════════════════════════════════
+
+.el-button--primary {
+  --el-button-bg-color: #{$color-accent};
+  --el-button-border-color: #{$color-accent};
+  --el-button-hover-bg-color: #{color.adjust($color-accent, $lightness: -8%)};
+  --el-button-hover-border-color: #{color.adjust($color-accent, $lightness: -8%)};
+  --el-button-active-bg-color: #{color.adjust($color-accent, $lightness: -12%)};
+  --el-button-active-border-color: #{color.adjust($color-accent, $lightness: -12%)};
+}
+
+.el-input__wrapper {
+  box-shadow: 0 0 0 1px $color-hairline inset !important;
+  border-radius: $radius-md !important;
+  font-family: $font-body;
+
+  &:hover,
+  &.is-focus {
+    box-shadow: 0 0 0 1px $color-accent inset !important;
+  }
+}
+
+.el-card {
+  border-radius: $radius-lg;
+  border-color: $color-hairline;
+  box-shadow: none;
+}
+
+.el-tag {
+  font-family: $font-mono;
+  border-radius: $radius-sm;
+}
+
+.el-avatar {
+  background: $color-accent;
+  color: $color-white;
+  font-family: $font-mono;
+  font-weight: 600;
+}
+
+.el-pagination {
+  --el-pagination-button-bg-color: transparent;
+  --el-pagination-hover-color: #{$color-accent};
+}
+
+// ═══════════════════════════════════════════════════════
+//  Animations
+// ═══════════════════════════════════════════════════════
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: fadeInUp 0.4s ease-out both;
+}
+
+.cursor-blink {
+  &::after {
+    content: '▋';
+    animation: blink 1s step-end infinite;
+    color: $color-accent;
+    margin-left: 2px;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Utilities
+// ═══════════════════════════════════════════════════════
+
+.text-mono {
+  font-family: $font-mono;
+}
+
+.text-slate {
+  color: $color-slate;
+}
+
+.text-accent {
+  color: $color-accent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color.adjust($color-hairline, $lightness: -10%);
+  border-radius: 3px;
+
+  &:hover {
+    background: $color-slate;
+  }
+}
+
+::selection {
+  background: $color-accent;
+  color: $color-white;
+}
