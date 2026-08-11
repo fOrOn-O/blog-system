@@ -35,7 +35,7 @@ function goHome() {
   .error-code {
     font-size: 120px;
     font-weight: 700;
-    color: #409eff;
+    color: #3B68CC;
     margin: 0;
     line-height: 1;
   }
@@ -48,7 +48,7 @@ function goHome() {
 
   .error-desc {
     font-size: 16px;
-    color: #909399;
+    color: var(--text-muted);
     margin: 0 0 32px;
   }
 }

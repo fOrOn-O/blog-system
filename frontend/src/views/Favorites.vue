@@ -15,7 +15,7 @@ async function fetchFavorites() {
   try {
     const res = await getFavorites({
       page: currentPage.value,
-      page_size: pageSize.value
+      limit: pageSize.value
     })
     // 收藏接口返回格式: { data: [{ id, article: {...} }] }
     // 需要转换为文章格式

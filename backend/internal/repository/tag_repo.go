@@ -27,6 +27,17 @@ func (r *TagRepository) GetByID(id uint) (*model.Tag, error) {
 	return &tag, err
 }
 
+// GetByIDs 根据ID列表获取标签
+func (r *TagRepository) GetByIDs(ids []uint) ([]model.Tag, error) {
+	if len(ids) == 0 {
+		return []model.Tag{}, nil
+	}
+
+	var tags []model.Tag
+	err := database.DB.Where("id IN ?", ids).Find(&tags).Error
+	return tags, err
+}
+
 // GetByName 根据名称获取标签
 func (r *TagRepository) GetByName(name string) (*model.Tag, error) {
 	var tag model.Tag

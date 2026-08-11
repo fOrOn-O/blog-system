@@ -27,12 +27,26 @@ function handleSearch() {
   }
 }
 
-function goToLatest() {
+function goHomeTop() {
   if (isHome.value) {
-    document.querySelector('#latest')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (route.hash) {
+      router.replace({ name: 'Home' })
+      return
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
-  router.push({ path: '/', hash: '#latest' })
+
+  router.push({ name: 'Home' })
+}
+
+function goToHomeSection(hash) {
+  if (isHome.value) {
+    document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+
+  router.push({ name: 'Home', hash })
 }
 
 async function handleLogout() {
@@ -70,7 +84,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   <div class="layout">
     <header class="nav" :class="{ 'nav--home': isHome, 'is-scrolled': isScrolled }">
       <div class="nav-inner container">
-        <button class="nav-logo" aria-label="返回首页" @click="router.push('/')">
+        <button class="nav-logo" aria-label="返回首页顶部" @click="goHomeTop">
           <span class="logo-mark">M</span>
           <span class="logo-copy">
             <strong>墨栈</strong>
@@ -78,8 +92,8 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
         </button>
 
         <nav class="nav-links" aria-label="主导航">
-          <button type="button" @click="router.push('/')">发现</button>
-          <button type="button" @click="goToLatest">最新文章</button>
+          <button type="button" @click="goToHomeSection('#featured')">发现</button>
+          <button type="button" @click="goToHomeSection('#latest-notes')">最新文章</button>
         </nav>
 
         <div class="nav-tools">
@@ -225,7 +239,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 
   small {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.18em;
     opacity: 0.65;
   }
@@ -243,9 +257,9 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     background: transparent;
     color: inherit;
     padding: 8px 0;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
-    opacity: 0.72;
+    opacity: 0.84;
     transition: opacity 0.2s ease;
 
     &::after {
@@ -298,9 +312,9 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     outline: none;
     background: transparent;
     color: inherit;
-    font-size: 12px;
+    font-size: 13px;
 
-    &::placeholder { color: currentColor; opacity: 0.5; }
+    &::placeholder { color: currentColor; opacity: 0.72; }
   }
 
   &.focused {
@@ -343,7 +357,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   background: transparent;
   color: inherit;
   padding: 9px 7px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .btn-join,
@@ -353,7 +367,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   border-radius: 999px;
   background: #d7a462;
   color: #102332;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   transition: transform 0.2s ease, background 0.2s ease;
 
@@ -373,6 +387,19 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   font-size: 16px;
   transition: transform 0.2s ease;
   &:hover { transform: rotate(-7deg); }
+}
+
+.nav-logo,
+.nav-links button,
+.btn-login,
+.btn-write,
+.btn-join,
+.nav-user,
+.clear-btn {
+  &:focus-visible {
+    outline: 2px solid #d7a462;
+    outline-offset: 3px;
+  }
 }
 
 :deep(.el-dropdown-menu) {
@@ -426,11 +453,11 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 .footer-brand p,
 .footer-meta {
   margin: 2px 0 0;
-  font-size: 11px;
-  color: rgba(249, 246, 238, 0.52);
+  font-size: 13px;
+  color: rgba(249, 246, 238, 0.76);
 }
 
-.footer-meta { gap: 18px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; }
+.footer-meta { gap: 18px; font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.08em; }
 
 @media (max-width: 820px) {
   .nav { height: 68px; }

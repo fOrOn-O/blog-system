@@ -1,14 +1,16 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getArticles } from '@/api/article'
 import ArticleCard from '@/components/ArticleCard.vue'
 import heroImage from '@/assets/editorial-hero.png'
 
 const router = useRouter()
+const route = useRoute()
 const articles = ref([])
 const loading = ref(false)
-const currentPage = ref(1)
+const initialPage = Number.parseInt(route.query.page, 10)
+const currentPage = ref(Number.isInteger(initialPage) && initialPage > 0 ? initialPage : 1)
 const pageSize = ref(10)
 const total = ref(0)
 
@@ -22,16 +24,27 @@ const topics = [
 
 const tags = ['Go', 'Vue', 'JavaScript', 'Docker', '数据库', 'AI', '工程化', '设计']
 
-const featuredArticle = computed(() => articles.value[0] || null)
-const remainingArticles = computed(() => articles.value.slice(1))
+const featuredArticle = ref(null)
+const allArticles = computed(() => articles.value)
 const featureCover = computed(() => featuredArticle.value?.cover_image || heroImage)
 const displayTotal = computed(() => String(total.value || 0).padStart(2, '0'))
+
+function extractArticles(response) {
+  return Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : []
+}
 
 async function fetchArticles() {
   loading.value = true
   try {
-    const res = await getArticles({ page: currentPage.value, page_size: pageSize.value })
-    articles.value = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+    const res = await getArticles({ page: currentPage.value, limit: pageSize.value })
+    articles.value = extractArticles(res)
+
+    if (currentPage.value === 1) {
+      featuredArticle.value = articles.value[0] || null
+    } else if (!featuredArticle.value) {
+      const latestRes = await getArticles({ page: 1, limit: 1 })
+      featuredArticle.value = extractArticles(latestRes)[0] || null
+    }
     total.value = res?.total || res?.meta?.total || articles.value.length
     stats.value.articles = total.value
     stats.value.likes = articles.value.reduce((sum, article) => sum + (article.like_count || 0), 0)
@@ -63,17 +76,24 @@ function goToArticle(id) {
 }
 
 function scrollToLatest() {
-  document.querySelector('#latest')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  document.querySelector('#featured')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function searchTopic(query) {
   router.push({ path: '/search', query: { keyword: query } })
 }
 
-function handlePageChange(page) {
+async function handlePageChange(page) {
   currentPage.value = page
-  fetchArticles()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  await router.replace({
+    name: 'Home',
+    query: {
+      ...route.query,
+      page: page > 1 ? String(page) : undefined
+    }
+  })
+  await fetchArticles()
+  document.querySelector('#latest-notes')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 onMounted(fetchArticles)
@@ -98,7 +118,7 @@ onMounted(fetchArticles)
       </div>
     </section>
 
-    <section id="latest" class="latest container">
+    <section id="featured" class="latest container">
       <div class="section-intro">
         <div>
           <p class="eyebrow">THE READING ROOM</p>
@@ -126,17 +146,17 @@ onMounted(fetchArticles)
             </div>
           </article>
 
-          <div class="journal-heading">
+          <div id="latest-notes" class="journal-heading">
             <p><span></span> LATEST NOTES</p>
             <span>{{ String(currentPage).padStart(2, '0') }} / {{ String(Math.max(1, Math.ceil(total / pageSize))).padStart(2, '0') }}</span>
           </div>
 
-          <div v-if="remainingArticles.length" class="journal-list">
+          <div v-if="allArticles.length" class="journal-list">
             <ArticleCard
-              v-for="(article, index) in remainingArticles"
+              v-for="(article, index) in allArticles"
               :key="article.id"
               :article="article"
-              :index="(currentPage - 1) * pageSize + index + 1"
+              :index="(currentPage - 1) * pageSize + index"
               class="animate-in"
               :style="{ animationDelay: `${index * 0.06}s` }"
             />
@@ -267,8 +287,8 @@ onMounted(fetchArticles)
   gap: 9px;
   margin: 0 0 20px;
   color: #e6c189;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .hero-kicker span { width: 25px; height: 1px; background: currentColor; }
@@ -293,7 +313,7 @@ onMounted(fetchArticles)
 
 .hero-copy {
   margin: 25px 0 0;
-  color: rgba(248, 244, 234, 0.74);
+  color: var(--text-on-dark-muted);
   font-size: 16px;
   line-height: 1.9;
 }
@@ -332,7 +352,7 @@ onMounted(fetchArticles)
   padding-bottom: 33px;
 }
 
-.hero-issue { display: flex; align-items: center; gap: 9px; color: rgba(248, 244, 234, 0.7); font-size: 11px; }
+.hero-issue { display: flex; align-items: center; gap: 9px; color: var(--text-on-dark-muted); font-size: 12px; }
 .hero-issue strong { color: #e6c189; font-size: 14px; }
 .hero-issue i { width: 38px; height: 1px; background: rgba(248, 244, 234, 0.3); }
 .hero-issue em { font-family: inherit; font-style: normal; letter-spacing: 0.08em; }
@@ -343,9 +363,9 @@ onMounted(fetchArticles)
   gap: 11px;
   border: 0;
   background: transparent;
-  color: rgba(248, 244, 234, 0.68);
+  color: var(--text-on-dark-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .scroll-cue i { display: block; width: 37px; height: 1px; background: currentColor; transform-origin: right; transition: transform .25s ease; }
@@ -355,12 +375,12 @@ onMounted(fetchArticles)
 .reveal--one { animation-delay: 0.12s; }.reveal--two { animation-delay: 0.22s; }.reveal--three { animation-delay: 0.36s; }.reveal--four { animation-delay: 0.48s; }
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
 
-.latest { padding-top: 130px; padding-bottom: 126px; scroll-margin-top: 60px; }
+.latest { padding-top: 130px; padding-bottom: 126px; scroll-margin-top: 84px; }
 
 .section-intro, .explore-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
-.eyebrow { margin: 0 0 12px; color: #92571e; font-size: 12px; font-weight: 700; }
+.eyebrow { margin: 0 0 12px; color: #92571e; font-size: 13px; font-weight: 700; }
 .section-intro h2, .explore h2 { margin: 0; color: #173241; font-size: clamp(31px, 3.3vw, 47px); line-height: 1.2; letter-spacing: .04em; }
-.section-intro > p { margin: 0 0 5px; color: #60717a; font-size: 13px; line-height: 1.75; text-align: right; }
+.section-intro > p { margin: 0 0 5px; color: #52666f; font-size: 14px; line-height: 1.75; text-align: right; }
 .section-intro strong { color: #173241; font-family: 'JetBrains Mono', monospace; font-size: 17px; }
 
 .reading-space { margin-top: 53px; min-height: 370px; }
@@ -380,37 +400,37 @@ onMounted(fetchArticles)
 .feature-image::after { content: ''; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(6,25,36,.28), transparent 60%); }
 .feature-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .7s cubic-bezier(.2,.7,.2,1); }
 .feature-story:hover .feature-image img { transform: scale(1.045); }
-.image-label { position: absolute; z-index: 1; top: 21px; left: 21px; padding: 7px 9px; background: rgba(10, 30, 41, .68); color: #edd5ad; font: 9px 'JetBrains Mono', monospace; letter-spacing: .13em; }
+.image-label { position: absolute; z-index: 1; top: 21px; left: 21px; padding: 7px 9px; background: rgba(10, 30, 41, .78); color: #f2d9b0; font: 12px 'JetBrains Mono', monospace; letter-spacing: .11em; }
 
 .feature-copy { display: flex; flex-direction: column; padding: clamp(30px, 4.2vw, 58px); }
-.story-type { display: flex; align-items: center; gap: 9px; margin: 0; color: #e5c187; font-size: 11px; }
+.story-type { display: flex; align-items: center; gap: 9px; margin: 0; color: #e9c98f; font-size: 12px; }
 .story-type span { display: inline-block; width: 18px; height: 1px; background: currentColor; opacity: .6; }
 .feature-copy h3 { margin: 21px 0 16px; font-family: 'Noto Serif SC', 'Songti SC', STSong, SimSun, serif; font-size: clamp(25px, 2.4vw, 37px); line-height: 1.37; font-weight: 600; letter-spacing: .03em; }
-.story-summary { display: -webkit-box; margin: 0; overflow: hidden; color: rgba(247,242,231,.67); font-size: 14px; line-height: 1.9; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.feature-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 16px; margin-top: auto; padding-top: 28px; color: rgba(247,242,231,.68); font: 11px 'JetBrains Mono', monospace; letter-spacing: .05em; }
+.story-summary { display: -webkit-box; margin: 0; overflow: hidden; color: rgba(247,242,231,.8); font-size: 15px; line-height: 1.9; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.feature-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 16px; margin-top: auto; padding-top: 28px; color: rgba(247,242,231,.82); font: 12px 'JetBrains Mono', monospace; letter-spacing: .05em; }
 .feature-bottom b { margin-left: auto; color: #e5c187; font-size: 12px; font-weight: 600; }.feature-bottom b i { margin-left: 5px; font-size: 16px; font-style: normal; }
 
-.journal-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 80px; padding-bottom: 16px; border-bottom: 1px solid rgba(25, 54, 66, 0.2); color: #52666f; font-size: 12px; font-weight: 600; }
-.journal-heading p { display: flex; align-items: center; gap: 9px; margin: 0; }.journal-heading p span { width: 19px; height: 1px; background: #b0763b; }.journal-heading > span { color: #8d9b9f; }
+.journal-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 80px; padding-bottom: 16px; border-bottom: 1px solid rgba(25, 54, 66, 0.2); color: #52666f; font-size: 13px; font-weight: 600; scroll-margin-top: 84px; }
+.journal-heading p { display: flex; align-items: center; gap: 9px; margin: 0; }.journal-heading p span { width: 19px; height: 1px; background: #b0763b; }.journal-heading > span { color: #60747b; }
 .journal-list { min-height: 280px; }
 
-.single-note { display: flex; align-items: center; gap: 15px; padding: 34px 4px; border-bottom: 1px solid rgba(25, 54, 66, 0.15); color: #7a898e; font-size: 14px; }.single-note span { color: #b0763b; font: 12px 'JetBrains Mono', monospace; }.single-note p { margin: 0; }
+.single-note { display: flex; align-items: center; gap: 15px; padding: 34px 4px; border-bottom: 1px solid rgba(25, 54, 66, 0.15); color: #52666f; font-size: 14px; }.single-note span { color: #92571e; font: 12px 'JetBrains Mono', monospace; }.single-note p { margin: 0; }
 
-.pagination { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 42px; font: 11px 'JetBrains Mono', monospace; color: #7c898e; }.pagination button { border: 0; background: transparent; color: #234453; cursor: pointer; font: inherit; transition: color .2s ease; }.pagination button:hover:not(:disabled) { color: #b0763b; }.pagination button:disabled { color: #bec4c3; cursor: default; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 42px; font: 12px 'JetBrains Mono', monospace; color: #586c74; }.pagination button { border: 0; background: transparent; color: #234453; cursor: pointer; font: inherit; transition: color .2s ease; }.pagination button:hover:not(:disabled) { color: #b0763b; }.pagination button:disabled { color: #929e9f; cursor: default; }
 
 .first-note { max-width: 650px; padding: 68px 0 72px; }.first-note-seal { display: grid; place-items: center; width: 47px; height: 47px; margin-bottom: 26px; border: 1px solid #c79455; border-radius: 50%; color: #a66c31; font: 27px Georgia, serif; }.first-note h3 { margin: 0; color: #183240; font-size: clamp(28px, 3vw, 42px); line-height: 1.42; letter-spacing: .025em; }.first-note > p:not(.eyebrow) { max-width: 500px; margin: 19px 0 28px; color: #60727a; font-size: 15px; line-height: 1.9; }.first-note button { background: #d7a462; color: #183240; font-weight: 700; }
 
 .explore { padding: 113px 0 126px; background: #e9e5dc; }.explore-top > span { color: rgba(23,50,65,.25); font: 70px/1 'Noto Serif SC', 'Songti SC', serif; }.topic-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 54px; border-top: 1px solid rgba(23,50,65,.22); }.topic { position: relative; min-height: 238px; display: flex; flex-direction: column; align-items: flex-start; border: 0; border-right: 1px solid rgba(23,50,65,.22); background: transparent; padding: 25px 28px 26px; color: #173241; cursor: pointer; text-align: left; transition: background .25s ease, color .25s ease; }.topic:last-child { border-right: 0; }.topic-index, .topic-en { font-family: 'JetBrains Mono', monospace; }.topic-index { color: #92571e; font-size: 12px; font-weight: 600; }.topic-en { margin-top: auto; color: #52666f; font-size: 12px; font-weight: 600; letter-spacing: .12em; }.topic strong { margin-top: 10px; font-family: 'Noto Serif SC', 'Songti SC', SimSun, serif; font-size: 27px; font-weight: 600; letter-spacing: .045em; }.topic small { margin-top: 8px; color: #566b73; font-size: 13px; }.topic i { position: absolute; right: 27px; bottom: 27px; color: #e5c187; font-size: 23px; font-style: normal; opacity: 0; transform: translate(-8px, 8px); transition: transform .25s ease, opacity .25s ease; }.topic:hover { background: #173241; color: #f7f2e8; }.topic:hover .topic-en, .topic:hover small { color: rgba(247,242,232,.8); }.topic:hover i { opacity: 1; transform: translate(0); }
 
 .community { display: grid; grid-template-columns: 1.05fr .95fr; gap: clamp(50px, 10vw, 148px); padding-top: 127px; padding-bottom: 127px; }.community h2 { margin: 0; color: #183340; font-size: clamp(40px, 4.2vw, 61px); line-height: 1.25; letter-spacing: .05em; }.community h2 em { color: #af7438; font-style: normal; }.community-copy > p:not(.eyebrow) { max-width: 385px; margin: 24px 0 30px; color: #65777e; font-size: 15px; line-height: 1.9; }.community-copy button { padding: 0 19px; background: #173241; color: #f7f3e9; }.community-copy button:hover { transform: translateY(-2px); background: #295263; }
-.community-side { align-self: end; padding: 26px 0 0; border-top: 1px solid rgba(25,54,66,.2); }.side-heading { display: flex; align-items: center; gap: 8px; color: #52666f; font-size: 11px; font-weight: 600; }.side-heading i { flex: 1; height: 1px; background: rgba(25,54,66,.18); }.side-heading b { color: #92571e; font-size: 11px; font-weight: 700; }.pulse-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; padding: 30px 0 26px; border-bottom: 1px solid rgba(25,54,66,.14); }.pulse-stats strong { display: block; color: #183340; font: 34px/1 'Noto Serif SC', 'Songti SC', serif; }.pulse-stats span { display: block; margin-top: 7px; color: #65767b; font-size: 12px; }.tags-wrap p { margin: 22px 0 12px; color: #65767b; font: 11px 'JetBrains Mono', monospace; letter-spacing: .1em; }.tags-wrap > div { display: flex; flex-wrap: wrap; gap: 8px; }.tags-wrap button { border: 1px solid rgba(25,54,66,.17); border-radius: 999px; background: transparent; padding: 6px 10px; color: #49616b; cursor: pointer; font-size: 12px; transition: color .2s ease, border-color .2s ease, background .2s ease; }.tags-wrap button:hover { border-color: #b27639; background: #f0e5d3; color: #92571e; }
+.community-side { align-self: end; padding: 26px 0 0; border-top: 1px solid rgba(25,54,66,.2); }.side-heading { display: flex; align-items: center; gap: 8px; color: #52666f; font-size: 12px; font-weight: 600; }.side-heading i { flex: 1; height: 1px; background: rgba(25,54,66,.18); }.side-heading b { color: #92571e; font-size: 12px; font-weight: 700; }.pulse-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; padding: 30px 0 26px; border-bottom: 1px solid rgba(25,54,66,.14); }.pulse-stats strong { display: block; color: #183340; font: 34px/1 'Noto Serif SC', 'Songti SC', serif; }.pulse-stats span { display: block; margin-top: 7px; color: #52676e; font-size: 13px; }.tags-wrap p { margin: 22px 0 12px; color: #52676e; font: 12px 'JetBrains Mono', monospace; letter-spacing: .1em; }.tags-wrap > div { display: flex; flex-wrap: wrap; gap: 8px; }.tags-wrap button { border: 1px solid rgba(25,54,66,.24); border-radius: 999px; background: transparent; padding: 7px 11px; color: #3f5964; cursor: pointer; font-size: 13px; transition: color .2s ease, border-color .2s ease, background .2s ease; }.tags-wrap button:hover { border-color: #b27639; background: #f0e5d3; color: #92571e; }
 
 @media (max-width: 840px) {
   .hero-content { padding-top: 150px; }.feature-story, .community { grid-template-columns: 1fr; }.feature-story { min-height: 0; }.feature-image { min-height: 310px; }.feature-copy { min-height: 370px; }.community-side { align-self: start; }.topic { min-height: 215px; }.explore, .latest, .community { padding-top: 88px; padding-bottom: 88px; }
 }
 
 @media (max-width: 600px) {
-  .hero { min-height: 720px; background-position: 58% center; }.hero::after { background: linear-gradient(180deg, rgba(3,16,28,.22), rgba(3,16,28,.67)); }.hero-content { padding-top: 128px; padding-bottom: 56px; }.hero h1 { font-size: 43px; line-height: 1.23; }.hero-copy { font-size: 14px; }.hero-actions { margin-top: 27px; }.hero-footer { padding-bottom: 21px; }.hero-issue em, .scroll-cue span { display: none; }.section-intro { align-items: flex-start; }.section-intro > p { margin-top: 7px; font-size: 11px; }.feature-image { min-height: 236px; }.feature-copy { min-height: 348px; padding: 31px 25px; }.feature-copy h3 { font-size: 27px; }.feature-bottom { gap: 8px 12px; }.feature-bottom b { width: 100%; margin-left: 0; margin-top: 5px; }.journal-heading { margin-top: 56px; }.topic-grid { grid-template-columns: 1fr; }.topic, .topic + .topic { min-height: 166px; padding: 21px 0; border-right: 0; border-bottom: 1px solid rgba(23,50,65,.22); }.topic:last-child { border-bottom: 0; }.topic-en { margin-top: 18px; }.topic i { right: 4px; bottom: 25px; opacity: 1; transform: none; }.explore-top > span { display: none; }.community { gap: 46px; }.community h2 { font-size: 42px; }.pulse-stats strong { font-size: 30px; }.first-note { padding: 45px 0 52px; }.first-note h3 { font-size: 29px; }.story-summary { -webkit-line-clamp: 4; }
+  .hero { min-height: 720px; background-position: 58% center; }.hero::after { background: linear-gradient(180deg, rgba(3,16,28,.22), rgba(3,16,28,.67)); }.hero-content { padding-top: 128px; padding-bottom: 56px; }.hero h1 { max-width: 100%; font-size: clamp(34px, 9.5vw, 38px); line-height: 1.26; text-wrap: wrap; overflow-wrap: anywhere; }.hero-copy { font-size: 15px; }.hero-actions { margin-top: 27px; }.hero-footer { padding-bottom: 21px; }.hero-issue em, .scroll-cue span { display: none; }.section-intro, .explore-top { align-items: flex-start; flex-direction: column; gap: 16px; }.section-intro > p { margin-top: 0; font-size: 13px; text-align: left; }.feature-image { min-height: 236px; }.feature-copy { min-height: 348px; padding: 31px 25px; }.feature-copy h3 { font-size: 27px; }.feature-bottom { gap: 8px 12px; }.feature-bottom b { width: 100%; margin-left: 0; margin-top: 5px; }.journal-heading { margin-top: 56px; }.topic-grid { grid-template-columns: 1fr; }.topic, .topic + .topic { min-height: 166px; padding: 21px 0; border-right: 0; border-bottom: 1px solid rgba(23,50,65,.22); }.topic:last-child { border-bottom: 0; }.topic-en { margin-top: 18px; }.topic i { right: 4px; bottom: 25px; opacity: 1; transform: none; }.explore-top > span { display: none; }.community { gap: 46px; }.community h2 { font-size: 42px; }.pulse-stats strong { font-size: 30px; }.first-note { padding: 45px 0 52px; }.first-note h3 { font-size: 29px; }.story-summary { -webkit-line-clamp: 4; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -50,6 +50,15 @@ const messages = {
   loginFirst: '请先登录',
 }
 
+function goBack() {
+  if (window.history.state?.back) {
+    router.back()
+    return
+  }
+
+  router.push('/')
+}
+
 async function fetchArticle() {
   loading.value = true
   try {
@@ -159,7 +168,7 @@ onMounted(() => { fetchArticle() })
   <div class="detail-page" v-loading="loading">
     <div class="container" v-if="article">
       <!-- Back -->
-      <div class="back-link" @click="router.push('/')">
+      <div class="back-link" role="button" tabindex="0" @click="goBack" @keyup.enter="goBack">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
         </svg>
@@ -330,14 +339,14 @@ onMounted(() => { fetchArticle() })
   align-items: center;
   gap: 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: #8896AB;
+  font-size: 14px;
+  color: var(--text-muted);
   cursor: pointer;
   margin-bottom: 24px;
   transition: color 0.15s ease;
 
   &:hover {
-    color: #5B8DEF;
+    color: #3B68CC;
   }
 }
 
@@ -355,8 +364,8 @@ onMounted(() => { fetchArticle() })
     align-items: center;
     gap: 8px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: #8896AB;
+    font-size: 13px;
+    color: var(--text-muted);
     margin-bottom: 16px;
 
     .meta-dot {
@@ -389,10 +398,10 @@ onMounted(() => { fetchArticle() })
   border: 1px solid #E8ECF0;
   border-radius: 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: #8896AB;
+  font-size: 13px;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
   &:hover {
     border-color: #2D3748;
@@ -400,8 +409,8 @@ onMounted(() => { fetchArticle() })
   }
 
   &.danger:hover {
-    border-color: #FC8181;
-    color: #FC8181;
+    border-color: #C2415A;
+    color: #C2415A;
     background: #FFF5F5;
   }
 }
@@ -440,7 +449,7 @@ onMounted(() => { fetchArticle() })
   }
 
   :deep(a) {
-    color: #5B8DEF;
+    color: #3B68CC;
     text-decoration: underline;
     text-underline-offset: 3px;
   }
@@ -451,7 +460,7 @@ onMounted(() => { fetchArticle() })
     background: #EDF2F7;
     padding: 2px 6px;
     border-radius: 4px;
-    color: #5B8DEF;
+    color: #3B68CC;
   }
 
   :deep(pre) {
@@ -473,12 +482,12 @@ onMounted(() => { fetchArticle() })
   }
 
   :deep(blockquote) {
-    border-left: 3px solid #5B8DEF;
+    border-left: 3px solid #3B68CC;
     padding: 12px 20px;
     margin: 24px 0;
     background: #F8F9FA;
     border-radius: 0 6px 6px 0;
-    color: #8896AB;
+    color: var(--text-muted);
     font-style: italic;
   }
 }
@@ -502,18 +511,18 @@ onMounted(() => { fetchArticle() })
   border-radius: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #8896AB;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
   &:hover {
-    border-color: #5B8DEF;
-    color: #5B8DEF;
+    border-color: #3B68CC;
+    color: #3B68CC;
   }
 
   &.active {
-    border-color: #5B8DEF;
-    color: #5B8DEF;
+    border-color: #3B68CC;
+    color: #3B68CC;
     background: #EBF2FF;
   }
 }
@@ -544,8 +553,8 @@ onMounted(() => { fetchArticle() })
 
   .comments-count {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: #8896AB;
+    font-size: 13px;
+    color: var(--text-muted);
   }
 }
 
@@ -562,7 +571,7 @@ onMounted(() => { fetchArticle() })
   width: 36px;
   height: 36px;
   border-radius: 6px;
-  background: #5B8DEF;
+  background: #3B68CC;
   color: #FFFFFF;
   display: flex;
   align-items: center;
@@ -584,18 +593,18 @@ onMounted(() => { fetchArticle() })
   border: 1px solid #E8ECF0;
   border-radius: 6px;
   font-family: 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   color: #2D3748;
   resize: none;
   outline: none;
   transition: border-color 0.15s ease;
 
   &::placeholder {
-    color: #A0AEC0;
+    color: var(--text-muted);
   }
 
   &:focus {
-    border-color: #5B8DEF;
+    border-color: #3B68CC;
   }
 }
 
@@ -607,8 +616,8 @@ onMounted(() => { fetchArticle() })
 
   .char-count {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #A0AEC0;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 }
 
@@ -619,13 +628,13 @@ onMounted(() => { fetchArticle() })
   border: none;
   border-radius: 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: #5B8DEF;
+    background: #3B68CC;
   }
 
   &:disabled {
@@ -643,22 +652,22 @@ onMounted(() => { fetchArticle() })
   background: #F8F9FA;
   border-radius: 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: #8896AB;
+  font-size: 14px;
+  color: var(--text-muted);
 
   .prompt-btn {
     padding: 4px 12px;
-    background: #5B8DEF;
+    background: #3B68CC;
     color: #FFFFFF;
     border: none;
     border-radius: 4px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     transition: background 0.15s ease;
 
     &:hover {
-      background: #4A7DE0;
+      background: #315EBE;
     }
   }
 }
@@ -683,12 +692,12 @@ onMounted(() => { fetchArticle() })
   height: 32px;
   border-radius: 6px;
   background: #E8ECF0;
-  color: #8896AB;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -713,8 +722,8 @@ onMounted(() => { fetchArticle() })
 
   .comment-time {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #A0AEC0;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 }
 
@@ -730,14 +739,14 @@ onMounted(() => { fetchArticle() })
   background: none;
   border: none;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: #A0AEC0;
+  font-size: 12px;
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 0.15s ease;
   padding: 0;
 
   &:hover {
-    color: #FC8181;
+    color: #C2415A;
   }
 }
 
@@ -747,12 +756,12 @@ onMounted(() => { fetchArticle() })
   gap: 8px;
   padding: 32px 0;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: #A0AEC0;
+  font-size: 14px;
+  color: var(--text-muted);
   justify-content: center;
 
   .empty-icon {
-    color: #E8ECF0;
+    color: #94A3B8;
     font-weight: 700;
   }
 }
@@ -764,7 +773,7 @@ onMounted(() => { fetchArticle() })
   }
 
   .article-header .article-title {
-    font-size: 24px;
+    font-size: 26px;
   }
 
   .comments-section {

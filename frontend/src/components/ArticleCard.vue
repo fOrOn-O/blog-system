@@ -83,13 +83,13 @@ function estimateReadTime(content) {
 .card-index {
   flex: 0 0 34px;
   padding-top: 5px;
-  color: #b27639;
-  font: 10px 'JetBrains Mono', 'SFMono-Regular', monospace;
+  color: #92571e;
+  font: 12px 'JetBrains Mono', 'SFMono-Regular', monospace;
   letter-spacing: .08em;
 }
 
 .card-body { flex: 1; min-width: 0; }
-.card-topline { display: flex; gap: 12px; color: #697a80; font: 11px 'JetBrains Mono', 'SFMono-Regular', monospace; letter-spacing: .06em; }.card-topline span + span { display: flex; align-items: center; gap: 12px; color: #92571e; }.card-topline span + span::before { content: ''; width: 14px; height: 1px; background: currentColor; opacity: .6; }
+.card-topline { display: flex; gap: 12px; color: #52666f; font: 12px 'JetBrains Mono', 'SFMono-Regular', monospace; letter-spacing: .06em; }.card-topline span + span { display: flex; align-items: center; gap: 12px; color: #92571e; }.card-topline span + span::before { content: ''; width: 14px; height: 1px; background: currentColor; opacity: .75; }
 
 h3 {
   margin: 10px 0 0;
@@ -107,19 +107,19 @@ h3 {
   max-width: 700px;
   margin: 8px 0 0;
   overflow: hidden;
-  color: #68787e;
-  font-size: 13px;
-  line-height: 1.75;
+  color: #566a72;
+  font-size: 14px;
+  line-height: 1.8;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-.card-bottom { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 15px; color: #6e7f85; font: 11px 'JetBrains Mono', 'SFMono-Regular', monospace; letter-spacing: .04em; }.card-reactions { margin-left: auto; letter-spacing: 0; }.card-reactions i { margin-right: 4px; font-size: 14px; font-style: normal; vertical-align: -1px; }.card-reactions i + i { margin-left: 10px; }
+.card-bottom { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 15px; color: #586c74; font: 12px 'JetBrains Mono', 'SFMono-Regular', monospace; letter-spacing: .04em; }.card-reactions { margin-left: auto; letter-spacing: 0; }.card-reactions i { margin-right: 4px; font-size: 14px; font-style: normal; vertical-align: -1px; }.card-reactions i + i { margin-left: 10px; }
 
 .card-cover { flex: 0 0 132px; height: 92px; margin-top: 1px; overflow: hidden; }.card-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
 .card-arrow { position: absolute; right: 11px; top: 50%; color: #ac7137; font-size: 21px; opacity: 0; transform: translate(-8px, 4px); transition: opacity .22s ease, transform .22s ease; }
 
 @media (max-width: 640px) {
-  .article-card { gap: 12px; padding: 24px 25px 24px 0; }.article-card:hover { padding-left: 5px; }.card-index { flex-basis: 22px; font-size: 10px; }.card-cover { display: none; }h3 { font-size: 19px; }.card-summary { font-size: 13px; }.card-bottom { margin-top: 12px; }.card-reactions { width: 100%; margin-left: 0; }.card-arrow { right: 4px; opacity: 1; transform: translateY(-50%); }
+  .article-card { gap: 12px; padding: 24px 25px 24px 0; }.article-card:hover { padding-left: 5px; }.card-index { flex-basis: 24px; font-size: 12px; }.card-cover { display: none; }h3 { font-size: 20px; }.card-summary { font-size: 14px; }.card-bottom { margin-top: 12px; }.card-reactions { width: 100%; margin-left: 0; }.card-arrow { right: 4px; opacity: 1; transform: translateY(-50%); }
 }
 </style>

@@ -26,7 +26,6 @@ const uploading = ref(false)
 
 // 标签相关
 const tags = ref([])
-const selectedTags = ref([])
 
 // 获取文章详情（编辑模式）
 async function fetchArticle() {
@@ -43,7 +42,6 @@ async function fetchArticle() {
       cover_image: article.cover_image || '',
       tag_ids: article.tags?.map(t => t.id) || []
     }
-    selectedTags.value = article.tags || []
   } catch (error) {
     console.error('获取文章失败:', error)
     ElMessage.error('文章不存在')
@@ -61,12 +59,6 @@ async function fetchTags() {
   } catch (error) {
     console.error('获取标签失败:', error)
   }
-}
-
-// 标签选择变化
-function handleTagChange(selectedIds) {
-  form.value.tag_ids = selectedIds
-  selectedTags.value = tags.value.filter(t => selectedIds.includes(t.id))
 }
 
 // 上传封面图片
@@ -223,7 +215,6 @@ onMounted(() => {
             filterable
             placeholder="选择标签（可多选）"
             style="width: 100%"
-            @change="handleTagChange"
           >
             <el-option
               v-for="tag in tags"
@@ -329,8 +320,8 @@ onMounted(() => {
   margin-top: 8px;
 
   .hint-text {
-    font-size: 12px;
-    color: #718096;
+    font-size: 13px;
+    color: var(--text-muted);
   }
 }
 
@@ -390,12 +381,12 @@ onMounted(() => {
     border: 2px dashed #E2E8F0;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.15s ease;
-    color: #718096;
+    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+    color: var(--text-muted);
 
     &:hover {
-      border-color: #5B8DEF;
-      color: #5B8DEF;
+      border-color: #3B68CC;
+      color: #3B68CC;
       background: #EBF4FF;
     }
 
@@ -404,8 +395,8 @@ onMounted(() => {
     }
 
     .upload-hint {
-      font-size: 12px;
-      color: #A0AEC0;
+      font-size: 13px;
+      color: var(--text-muted);
     }
   }
 }
@@ -432,18 +423,18 @@ onMounted(() => {
     cursor: pointer;
     font-size: 13px;
     color: #4A5568;
-    transition: all 0.15s ease;
+    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
     &:hover {
-      border-color: #5B8DEF;
-      color: #5B8DEF;
+      border-color: #3B68CC;
+      color: #3B68CC;
       background: #EBF4FF;
     }
   }
 
   .toolbar-hint {
-    font-size: 12px;
-    color: #5B8DEF;
+    font-size: 13px;
+    color: #3B68CC;
   }
 }
 

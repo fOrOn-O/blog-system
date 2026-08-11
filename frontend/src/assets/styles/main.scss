@@ -8,15 +8,15 @@
 // ── Color Palette (柔和配色) ────────────────────────────
 $color-paper:       #F8F9FA;      // 更柔和的浅灰背景
 $color-ink:         #2D3748;      // 柔和的深灰文字
-$color-accent:      #5B8DEF;      // 柔和蓝作为主色调
+$color-accent:      #3B68CC;      // 保留柔和感，同时保证小号蓝字清晰可读
 $color-accent-light:#EBF2FF;      // 浅蓝背景
-$color-slate:       #8896AB;      // 柔和的灰蓝
+$color-slate:       #64748B;      // 可读的灰蓝（浅色背景保持清晰对比）
 $color-hairline:    #E8ECF0;      // 柔和的边框色
 $color-editor:      #2D3748;      // 代码块背景
 $color-editor-text: #E2E8F0;      // 代码块文字
 $color-success:     #68D391;      // 柔和绿
 $color-warning:     #F6AD55;      // 柔和橙
-$color-danger:      #FC8181;      // 柔和红
+$color-danger:      #C2415A;      // 可读的危险操作红
 $color-white:       #FFFFFF;
 
 // ── Typography ─────────────────────────────────────────
@@ -72,6 +72,15 @@ body {
   min-height: 100vh;
 }
 
+:root {
+  --text-muted: #64748B;
+  --text-muted-strong: #526274;
+  --text-on-dark-muted: rgba(248, 244, 234, 0.78);
+  --el-text-color-regular: #475569;
+  --el-text-color-secondary: #64748B;
+  --el-text-color-placeholder: #64748B;
+}
+
 a {
   color: $color-accent;
   text-decoration: none;
@@ -94,8 +103,8 @@ img {
 
 .label {
   font-family: $font-mono;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: $color-slate;
@@ -224,7 +233,7 @@ img {
   display: inline-flex;
   align-items: center;
   font-family: $font-mono;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   padding: $space-1 $space-3;
   background: $color-paper;
@@ -232,7 +241,7 @@ img {
   border-radius: $radius-sm;
   color: $color-slate;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
   &:hover {
     border-color: $color-accent;
@@ -243,7 +252,7 @@ img {
 
 .meta {
   font-family: $font-mono;
-  font-size: 12px;
+  font-size: 13px;
   color: $color-slate;
   display: flex;
   align-items: center;
@@ -269,7 +278,7 @@ img {
 
   .stat-label {
     @extend .label;
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 
@@ -295,6 +304,11 @@ img {
   &.is-focus {
     box-shadow: 0 0 0 1px $color-accent inset !important;
   }
+}
+
+.el-input.is-disabled .el-input__inner {
+  color: $color-slate;
+  -webkit-text-fill-color: $color-slate;
 }
 
 .el-card {

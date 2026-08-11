@@ -42,7 +42,7 @@ func (r *FavoriteRepository) GetByUserID(userID uint, page, limit int) ([]model.
 	query.Count(&total)
 
 	offset := (page - 1) * limit
-	err := query.Preload("Article").Preload("Article.User").
+	err := query.Preload("Article").Preload("Article.User").Preload("Article.Tags").
 		Offset(offset).Limit(limit).
 		Order("created_at DESC").
 		Find(&favorites).Error

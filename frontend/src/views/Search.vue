@@ -22,7 +22,7 @@ async function fetchArticles() {
     const res = await searchArticles({
       keyword: keyword.value.trim(),
       page: currentPage.value,
-      page_size: pageSize.value
+      limit: pageSize.value
     })
     articles.value = res.data || res || []
     total.value = res.total || res.meta?.total || 0
@@ -116,12 +116,12 @@ onMounted(() => {
   gap: 16px;
 
   .keyword {
-    color: #409eff;
+    color: #3B68CC;
   }
 
   .result-count {
     font-size: 14px;
-    color: #909399;
+    color: var(--text-muted);
   }
 }
 

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '@/utils/auth'
+import { scrollBehavior } from './scroll-behavior'
 
 const routes = [
   {
@@ -67,9 +68,7 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior() {
-    return { top: 0 }
-  }
+  scrollBehavior
 })
 
 // 路由守卫

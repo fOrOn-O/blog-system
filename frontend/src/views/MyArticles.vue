@@ -21,7 +21,7 @@ async function fetchMyArticles() {
     // 获取所有文章，然后过滤出当前用户的
     const res = await getArticles({
       page: 1,
-      page_size: 100 // 获取足够多的文章
+      limit: 100 // 获取足够多的文章
     })
     const allArticles = res.data || res || []
     // 过滤出当前用户的文章
@@ -186,7 +186,7 @@ onMounted(() => {
 .article-count {
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #718096;
+  color: var(--text-muted);
 }
 
 .btn-write {
@@ -194,7 +194,7 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  background: #5B8DEF;
+  background: #3B68CC;
   color: white;
   border: none;
   border-radius: 6px;
@@ -202,10 +202,10 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background: #4A7DE0;
+    background: #315EBE;
   }
 }
 
@@ -230,7 +230,7 @@ onMounted(() => {
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   margin-bottom: 12px;
-  transition: all 0.15s ease;
+  transition: box-shadow 0.15s ease;
 
   &:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -252,13 +252,13 @@ onMounted(() => {
   transition: color 0.15s ease;
 
   .article-item:hover & {
-    color: #5B8DEF;
+    color: #3B68CC;
   }
 }
 
 .article-summary {
   font-size: 14px;
-  color: #718096;
+  color: var(--text-muted);
   margin: 0 0 10px;
   line-height: 1.5;
   display: -webkit-box;
@@ -272,11 +272,11 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: #A0AEC0;
+  font-size: 13px;
+  color: var(--text-muted);
 
   .meta-dot {
-    color: #CBD5E0;
+    color: #94A3B8;
   }
 }
 
@@ -296,19 +296,19 @@ onMounted(() => {
   background: #F7FAFC;
   border: 1px solid #E2E8F0;
   border-radius: 6px;
-  color: #718096;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 
   &.edit:hover {
-    border-color: #5B8DEF;
-    color: #5B8DEF;
+    border-color: #3B68CC;
+    color: #3B68CC;
     background: #EBF4FF;
   }
 
   &.delete:hover {
-    border-color: #FC8181;
-    color: #FC8181;
+    border-color: #C2415A;
+    color: #C2415A;
     background: #FFF5F5;
   }
 }
@@ -326,14 +326,14 @@ onMounted(() => {
   .empty-text {
     font-family: 'JetBrains Mono', monospace;
     font-size: 16px;
-    color: #718096;
+    color: var(--text-muted);
     margin-bottom: 24px;
   }
 }
 
 .btn-primary {
   padding: 10px 24px;
-  background: #5B8DEF;
+  background: #3B68CC;
   color: white;
   border: none;
   border-radius: 6px;
@@ -341,10 +341,10 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background: #4A7DE0;
+    background: #315EBE;
   }
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,6 +71,18 @@ func (c *MemoryCache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.data, key)
+}
+
+// DeletePrefix 删除指定前缀的所有缓存项
+func (c *MemoryCache) DeletePrefix(prefix string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for key := range c.data {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.data, key)
+		}
+	}
 }
 
 // InitRedis 初始化Redis连接
@@ -140,6 +153,24 @@ func CacheDelete(key string) {
 	} else {
 		memoryCache.Delete(key)
 	}
+}
+
+// CacheDeletePrefix 删除指定前缀的所有缓存（自动降级）
+func CacheDeletePrefix(prefix string) {
+	if redisAvailable {
+		ctx := context.Background()
+		iterator := Redis.Scan(ctx, 0, prefix+"*", 100).Iterator()
+		keys := make([]string, 0)
+		for iterator.Next(ctx) {
+			keys = append(keys, iterator.Val())
+		}
+		if len(keys) > 0 {
+			Redis.Del(ctx, keys...)
+		}
+		return
+	}
+
+	memoryCache.DeletePrefix(prefix)
 }
 
 // CloseRedis 关闭Redis连接

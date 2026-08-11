@@ -158,7 +158,7 @@ async function handleRegister() {
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     font-weight: 600;
-    color: #5B8DEF;
+    color: #3B68CC;
   }
 }
 
@@ -173,7 +173,7 @@ async function handleRegister() {
   line-height: 1.6;
 
   .t-prompt {
-    color: #5B8DEF;
+    color: #3B68CC;
     margin-right: 8px;
     font-weight: 600;
   }
@@ -199,11 +199,11 @@ async function handleRegister() {
 .form-label {
   display: block;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #8896AB;
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 
@@ -217,14 +217,14 @@ async function handleRegister() {
   font-size: 14px;
   color: #2D3748;
   outline: none;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &::placeholder {
-    color: #A0AEC0;
+    color: var(--text-muted);
   }
 
   &:focus {
-    border-color: #5B8DEF;
+    border-color: #3B68CC;
     box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.1);
   }
 }
@@ -240,11 +240,11 @@ async function handleRegister() {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
   margin-top: 8px;
 
   &:hover:not(:disabled) {
-    background: #5B8DEF;
+    background: #3B68CC;
   }
 
   &:disabled {
@@ -253,7 +253,7 @@ async function handleRegister() {
   }
 
   &.loading {
-    background: #8896AB;
+    background: var(--text-muted);
   }
 }
 
@@ -278,14 +278,14 @@ async function handleRegister() {
   gap: 8px;
   margin-top: 20px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
 
   .footer-text {
-    color: #8896AB;
+    color: var(--text-muted);
   }
 
   .footer-link {
-    color: #5B8DEF;
+    color: #3B68CC;
     cursor: pointer;
     text-decoration: none;
 

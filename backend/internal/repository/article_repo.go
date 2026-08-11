@@ -15,9 +15,19 @@ func NewArticleRepository() *ArticleRepository {
 	return &ArticleRepository{}
 }
 
-// Create 创建文章
-func (r *ArticleRepository) Create(article *model.Article) error {
-	return database.DB.Create(article).Error
+// Create 创建文章并保存标签关联
+func (r *ArticleRepository) Create(article *model.Article, tags []model.Tag) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit("Tags", "User").Create(article).Error; err != nil {
+			return err
+		}
+
+		if len(tags) == 0 {
+			return nil
+		}
+
+		return tx.Model(article).Association("Tags").Replace(tags)
+	})
 }
 
 // FindByID 根据ID查找文章
@@ -27,9 +37,19 @@ func (r *ArticleRepository) FindByID(id uint) (*model.Article, error) {
 	return &article, err
 }
 
-// Update 更新文章
-func (r *ArticleRepository) Update(article *model.Article) error {
-	return database.DB.Save(article).Error
+// Update 更新文章，并在需要时替换标签关联
+func (r *ArticleRepository) Update(article *model.Article, tags []model.Tag, replaceTags bool) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit("Tags", "User").Save(article).Error; err != nil {
+			return err
+		}
+
+		if !replaceTags {
+			return nil
+		}
+
+		return tx.Model(article).Association("Tags").Replace(tags)
+	})
 }
 
 // Delete 删除文章（级联删除关联数据）
