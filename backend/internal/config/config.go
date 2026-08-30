@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -89,6 +90,11 @@ func overrideFromEnv() {
 	if password := os.Getenv("BLOG_ADMIN_PASSWORD"); password != "" {
 		// 这个值会在 main.go 中使用
 		log.Println("管理员密码已从环境变量加载")
+	}
+
+	if driver := strings.TrimSpace(os.Getenv("BLOG_DATABASE_DRIVER")); driver != "" {
+		AppConfig.Database.Driver = strings.ToLower(driver)
+		log.Println("数据库驱动已从环境变量加载")
 	}
 
 	if dsn := os.Getenv("BLOG_DATABASE_DSN"); dsn != "" {

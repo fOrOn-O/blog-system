@@ -7,6 +7,7 @@ import (
 
 	"blog-system/internal/config"
 
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -23,6 +24,8 @@ func InitDatabase() {
 	switch cfg.Driver {
 	case "sqlite":
 		dialector = sqlite.Open(cfg.DSN)
+	case "mysql":
+		dialector = mysql.Open(cfg.DSN)
 	default:
 		log.Fatalf("不支持的数据库驱动: %s", cfg.Driver)
 	}
