@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isAuthenticated } from '@/utils/auth'
+import { getUser, isAuthenticated } from '@/utils/auth'
+import { resolveRouteAccess } from './access-control'
 import { scrollBehavior } from './scroll-behavior'
 
 const routes = [
@@ -58,6 +59,12 @@ const routes = [
     meta: { title: '搜索结果' }
   },
   {
+    path: '/admin/tags',
+    name: 'AdminTags',
+    component: () => import('@/views/TagManagement.vue'),
+    meta: { title: '标签管理', requiresAuth: true, requiresAdmin: true }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFound.vue'),
@@ -77,16 +84,13 @@ router.beforeEach((to, from, next) => {
   document.title = `${to.meta.title || '博客'} - Blog System`
 
   const authenticated = isAuthenticated()
+  const redirect = resolveRouteAccess(to, {
+    authenticated,
+    user: getUser()
+  })
 
-  // 需要登录的页面
-  if (to.meta.requiresAuth && !authenticated) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-    return
-  }
-
-  // 游客页面（已登录用户不能访问）
-  if (to.meta.guest && authenticated) {
-    next({ name: 'Home' })
+  if (redirect) {
+    next(redirect)
     return
   }
 

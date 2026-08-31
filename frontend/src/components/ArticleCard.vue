@@ -47,7 +47,7 @@ function estimateReadTime(content) {
       <h3>{{ article.title }}</h3>
       <p v-if="excerpt" class="card-summary">{{ excerpt }}</p>
       <div class="card-bottom">
-        <span>作者：{{ article.user?.username || '墨栈' }}</span>
+        <span>作者：{{ article.user?.username || '随想录' }}</span>
         <span>阅读 {{ estimateReadTime(article.content) }} 分钟</span>
         <span class="card-reactions"><i aria-hidden="true">♡</i>{{ article.like_count || 0 }} <i aria-hidden="true">◌</i>{{ article.comment_count || 0 }}</span>
       </div>

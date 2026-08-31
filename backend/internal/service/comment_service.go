@@ -85,7 +85,7 @@ func (s *CommentService) GetByArticleID(articleID uint, page, limit int) ([]Comm
 		return nil, 0, err
 	}
 
-	var responses []CommentResponse
+	responses := make([]CommentResponse, 0, len(comments))
 	for _, comment := range comments {
 		responses = append(responses, *toCommentResponse(&comment))
 	}

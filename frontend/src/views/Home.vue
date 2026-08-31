@@ -104,7 +104,7 @@ onMounted(fetchArticles)
     <section class="hero" :style="{ '--hero-image': `url(${heroImage})` }">
       <div class="hero-noise" aria-hidden="true"></div>
       <div class="hero-content container">
-        <p class="hero-kicker reveal reveal--one"><span></span> 墨栈 · 2026</p>
+        <p class="hero-kicker reveal reveal--one"><span></span> 随想录 · 2026</p>
         <h1 class="reveal reveal--two">把每一次思考，<br />写成值得重读的篇章。</h1>
         <p class="hero-copy reveal reveal--three">这里收录技术、创造与日常的深度记录。<br />慢一点读，也认真一点写。</p>
         <div class="hero-actions reveal reveal--four">
@@ -139,7 +139,7 @@ onMounted(fetchArticles)
               <h3>{{ featuredArticle.title }}</h3>
               <p class="story-summary">{{ getExcerpt(featuredArticle) }}</p>
               <div class="feature-bottom">
-                <span>作者：{{ featuredArticle.user?.username || '墨栈' }}</span>
+                <span>作者：{{ featuredArticle.user?.username || '随想录' }}</span>
                 <span>阅读 {{ estimateReadTime(featuredArticle) }} 分钟</span>
                 <b>阅读文章 <i aria-hidden="true">↗</i></b>
               </div>
@@ -175,7 +175,7 @@ onMounted(fetchArticles)
         </template>
 
         <div v-else-if="!loading" class="first-note">
-          <div class="first-note-seal">M</div>
+          <div class="first-note-seal" aria-hidden="true"></div>
           <p class="eyebrow">THE FIRST PAGE IS WAITING</p>
           <h3>从第一篇公开笔记开始，<br />让这里慢慢成为你的知识花园。</h3>
           <p>无需等到一切完美。一个正在成形的想法，就值得被好好记下来。</p>
@@ -208,7 +208,7 @@ onMounted(fetchArticles)
         <p class="eyebrow">IN THE MARGIN</p>
         <h2>留下你的<br /><em>阅读轨迹。</em></h2>
         <p>收藏触动你的段落，写下正在验证的判断，也让偶遇的灵感在这里继续生长。</p>
-        <button type="button" @click="router.push('/register')">加入墨栈 <span aria-hidden="true">↗</span></button>
+        <button type="button" @click="router.push('/register')">加入随想录 <span aria-hidden="true">↗</span></button>
       </div>
       <div class="community-side">
         <div class="side-heading"><span>READING PULSE</span><i></i><b>LIVE</b></div>

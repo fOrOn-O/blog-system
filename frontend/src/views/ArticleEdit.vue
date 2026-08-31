@@ -5,6 +5,7 @@ import { getArticle, createArticle, updateArticle } from '@/api/article'
 import { getTags } from '@/api/tag'
 import { uploadImage } from '@/api/upload'
 import { ElMessage } from 'element-plus'
+import RichTextEditor from '@/components/RichTextEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,7 +38,7 @@ async function fetchArticle() {
     const article = res.data
     form.value = {
       title: article.title,
-      content: article.content,
+      content: article.content || '',
       summary: article.summary || '',
       cover_image: article.cover_image || '',
       tag_ids: article.tags?.map(t => t.id) || []
@@ -95,41 +96,6 @@ async function handleCoverUpload(event) {
   }
 }
 
-// 上传内容图片（插入到编辑器）
-async function handleContentImageUpload(event) {
-  const file = event.target.files[0]
-  if (!file) return
-
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('图片大小不能超过10MB')
-    return
-  }
-
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-  if (!allowedTypes.includes(file.type)) {
-    ElMessage.warning('只支持 jpg、png、gif、webp 格式')
-    return
-  }
-
-  uploading.value = true
-  try {
-    const res = await uploadImage(file)
-    const data = res.data || res
-    const imageUrl = data.url
-
-    // 插入图片到内容
-    const imageTag = `<img src="${imageUrl}" alt="图片">`
-    form.value.content += '\n' + imageTag + '\n'
-    ElMessage.success('图片已插入')
-  } catch (error) {
-    console.error('上传失败:', error)
-    ElMessage.error('上传失败')
-  } finally {
-    uploading.value = false
-    event.target.value = ''
-  }
-}
-
 // 删除封面
 function removeCover() {
   form.value.cover_image = ''
@@ -142,7 +108,12 @@ async function handleSubmit() {
     return
   }
 
-  if (!form.value.content.trim()) {
+  const contentText = form.value.content
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .trim()
+  const hasImage = /<img\b/i.test(form.value.content)
+  if (!contentText && !hasImage) {
     ElMessage.warning('请输入文章内容')
     return
   }
@@ -260,28 +231,7 @@ onMounted(() => {
 
         <!-- 文章内容 -->
         <el-form-item label="文章内容" required>
-          <div class="content-toolbar">
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              @change="handleContentImageUpload"
-              id="content-image-input"
-              class="file-input"
-            />
-            <label for="content-image-input" class="toolbar-btn" title="插入图片">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-              </svg>
-              <span>插入图片</span>
-            </label>
-            <span class="toolbar-hint">{{ uploading ? '上传中...' : '' }}</span>
-          </div>
-          <el-input
-            v-model="form.content"
-            type="textarea"
-            :rows="15"
-            placeholder="请输入文章内容（支持 HTML 格式）"
-          />
+          <RichTextEditor v-model="form.content" />
         </el-form-item>
 
         <!-- 提交按钮 -->
@@ -398,43 +348,6 @@ onMounted(() => {
       font-size: 13px;
       color: var(--text-muted);
     }
-  }
-}
-
-// ── 内容工具栏 ─────────────────────────────────────────
-.content-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-
-  .file-input {
-    display: none;
-  }
-
-  .toolbar-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    background: #F7FAFC;
-    border: 1px solid #E2E8F0;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    color: #4A5568;
-    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
-
-    &:hover {
-      border-color: #3B68CC;
-      color: #3B68CC;
-      background: #EBF4FF;
-    }
-  }
-
-  .toolbar-hint {
-    font-size: 13px;
-    color: #3B68CC;
   }
 }
 

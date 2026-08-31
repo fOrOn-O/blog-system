@@ -14,6 +14,7 @@ const isScrolled = ref(false)
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const currentUser = computed(() => authStore.currentUser)
+const isAdmin = computed(() => currentUser.value?.role === 'admin')
 const isHome = computed(() => route.name === 'Home')
 
 function handleScroll() {
@@ -65,7 +66,8 @@ function handleCommand(command) {
   const destination = {
     'my-articles': '/my-articles',
     favorites: '/favorites',
-    profile: '/profile'
+    profile: '/profile',
+    'admin-tags': '/admin/tags'
   }[command]
 
   if (destination) router.push(destination)
@@ -85,9 +87,9 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     <header class="nav" :class="{ 'nav--home': isHome, 'is-scrolled': isScrolled }">
       <div class="nav-inner container">
         <button class="nav-logo" aria-label="返回首页顶部" @click="goHomeTop">
-          <span class="logo-mark">M</span>
+          <span class="logo-mark" aria-hidden="true"></span>
           <span class="logo-copy">
-            <strong>墨栈</strong>
+            <strong>随想录</strong>
           </span>
         </button>
 
@@ -127,6 +129,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
                   <el-dropdown-item command="my-articles"><el-icon><Document /></el-icon>我的文章</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item command="profile"><el-icon><User /></el-icon>个人中心</el-dropdown-item>
+                  <el-dropdown-item v-if="isAdmin" command="admin-tags"><el-icon><CollectionTag /></el-icon>标签管理</el-dropdown-item>
                   <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -148,14 +151,14 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     <footer class="footer">
       <div class="footer-inner container">
         <div class="footer-brand">
-          <span class="footer-mark">M</span>
+          <span class="footer-mark" aria-hidden="true"></span>
           <div>
-            <strong>墨栈</strong>
+            <strong>随想录</strong>
             <p>为值得反复阅读的想法留一盏灯。</p>
           </div>
         </div>
         <div class="footer-meta">
-          <span>© 2026 墨栈</span>
+          <span>© 2026 随想录</span>
           <span>Made for slow reading</span>
         </div>
       </div>

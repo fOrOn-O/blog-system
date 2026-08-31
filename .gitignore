@@ -27,6 +27,7 @@ blog.db
 *.sqlite
 tmp/
 vendor/
+lark-work/
 
 # Environment
 .env

@@ -8,7 +8,9 @@ import {
   favoriteArticle, unfavoriteArticle, checkFavorited,
   getComments, createComment, deleteComment
 } from '@/api/article'
+import { normalizeCommentsResponse } from '@/utils/comments'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DOMPurify from 'dompurify'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +27,10 @@ const isFavorited = ref(false)
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isAuthor = computed(() => authStore.currentUser?.id === article.value?.user?.id)
 const articleId = computed(() => route.params.id)
+const sanitizedArticleContent = computed(() => DOMPurify.sanitize(
+  article.value?.content || '',
+  { USE_PROFILES: { html: true } }
+))
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -95,8 +101,10 @@ async function fetchFavoriteStatus() {
 async function fetchComments() {
   try {
     const res = await getComments(articleId.value)
-    comments.value = res.data || res || []
-  } catch {}
+    comments.value = normalizeCommentsResponse(res)
+  } catch {
+    comments.value = []
+  }
 }
 
 async function handleLike() {
@@ -210,7 +218,7 @@ onMounted(() => { fetchArticle() })
         <div class="article-divider"></div>
 
         <!-- Content -->
-        <div class="article-content prose" v-html="article.content"></div>
+        <div class="article-content prose" v-html="sanitizedArticleContent"></div>
 
         <!-- Interaction Bar -->
         <div class="interaction-bar">
@@ -422,73 +430,120 @@ onMounted(() => { fetchArticle() })
 }
 
 .article-content {
+  color: #2D3748;
+  font-size: 16px;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+
   :deep(h2) {
     font-family: 'Inter', sans-serif;
     font-size: 24px;
-    font-weight: 600;
-    margin-top: 40px;
-    margin-bottom: 16px;
+    font-weight: 650;
+    line-height: 1.4;
+    margin: 40px 0 16px;
     padding-bottom: 8px;
     border-bottom: 1px solid #E8ECF0;
+    color: #1F2937;
   }
 
   :deep(h3) {
     font-size: 20px;
     font-weight: 600;
+    line-height: 1.45;
+    margin: 32px 0 14px;
+    color: #263442;
   }
 
   :deep(p) {
-    margin-bottom: 16px;
-    line-height: 1.8;
+    margin: 0 0 20px;
+    line-height: inherit;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 0 0 20px;
+    padding-left: 28px;
+  }
+
+  :deep(ul) {
+    list-style: disc;
+  }
+
+  :deep(ol) {
+    list-style: decimal;
+  }
+
+  :deep(li) {
+    margin: 7px 0;
+    padding-left: 3px;
+    line-height: 1.75;
+  }
+
+  :deep(li > p) {
+    margin-bottom: 8px;
   }
 
   :deep(img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
     border-radius: 6px;
     border: 1px solid #E8ECF0;
-    margin: 24px 0;
+    margin: 28px auto;
   }
 
   :deep(a) {
     color: #3B68CC;
     text-decoration: underline;
     text-underline-offset: 3px;
+    overflow-wrap: break-word;
+
+    &:hover {
+      color: #274FA8;
+    }
   }
 
   :deep(code) {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.88em;
     background: #EDF2F7;
-    padding: 2px 6px;
+    padding: 0.15em 0.4em;
     border-radius: 4px;
-    color: #3B68CC;
+    color: #B42318;
   }
 
   :deep(pre) {
     background: #2D3748;
     color: #E2E8F0;
-    padding: 20px;
+    padding: 20px 22px;
     border-radius: 6px;
     overflow-x: auto;
     margin: 24px 0;
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     line-height: 1.7;
+    tab-size: 2;
+  }
 
-    code {
-      background: none;
-      padding: 0;
-      color: inherit;
-    }
+  :deep(pre code) {
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    white-space: pre;
   }
 
   :deep(blockquote) {
     border-left: 3px solid #3B68CC;
-    padding: 12px 20px;
+    padding: 14px 20px;
     margin: 24px 0;
     background: #F8F9FA;
     border-radius: 0 6px 6px 0;
     color: var(--text-muted);
-    font-style: italic;
+  }
+
+  :deep(blockquote p:last-child) {
+    margin-bottom: 0;
   }
 }
 
