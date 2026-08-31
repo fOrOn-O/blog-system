@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -82,16 +83,18 @@ func InitConfig() {
 
 // overrideFromEnv 从环境变量覆盖敏感配置
 func overrideFromEnv() {
+	// JWT
 	if secret := os.Getenv("BLOG_JWT_SECRET"); secret != "" {
 		AppConfig.JWT.Secret = secret
 		log.Println("JWT Secret 已从环境变量加载")
 	}
 
+	// 管理员密码由 main.go 直接读取
 	if password := os.Getenv("BLOG_ADMIN_PASSWORD"); password != "" {
-		// 这个值会在 main.go 中使用
 		log.Println("管理员密码已从环境变量加载")
 	}
 
+	// Database
 	if driver := strings.TrimSpace(os.Getenv("BLOG_DATABASE_DRIVER")); driver != "" {
 		AppConfig.Database.Driver = strings.ToLower(driver)
 		log.Println("数据库驱动已从环境变量加载")
@@ -102,9 +105,38 @@ func overrideFromEnv() {
 		log.Println("数据库 DSN 已从环境变量加载")
 	}
 
-	if redisPassword := os.Getenv("BLOG_REDIS_PASSWORD"); redisPassword != "" {
-		AppConfig.Redis.Password = redisPassword
-		log.Println("Redis 密码已从环境变量加载")
+	// Redis
+	if host := os.Getenv("BLOG_REDIS_HOST"); host != "" {
+		AppConfig.Redis.Host = host
+		log.Println("Redis Host 已从环境变量加载")
+	}
+
+	if port := os.Getenv("BLOG_REDIS_PORT"); port != "" {
+		AppConfig.Redis.Port = port
+	}
+
+	if password, exists := os.LookupEnv("BLOG_REDIS_PASSWORD"); exists {
+		AppConfig.Redis.Password = password
+	}
+
+	if redisDB := os.Getenv("BLOG_REDIS_DB"); redisDB != "" {
+		db, err := strconv.Atoi(redisDB)
+		if err != nil {
+			log.Printf("Redis DB 配置无效: %v", err)
+		} else {
+			AppConfig.Redis.DB = db
+		}
+	}
+
+	// Render 自动提供 PORT，例如 10000
+	if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		AppConfig.App.Port = ":" + strings.TrimPrefix(port, ":")
+		log.Println("应用端口已从 PORT 环境变量加载")
+	}
+
+	// Application mode
+	if mode := os.Getenv("BLOG_APP_MODE"); mode != "" {
+		AppConfig.App.Mode = mode
 	}
 }
 
