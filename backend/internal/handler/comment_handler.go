@@ -84,7 +84,7 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.commentService.Delete(claims.UserID, uint(commentID)); err != nil {
+	if err := h.commentService.Delete(claims.UserID, claims.Role, uint(commentID)); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

@@ -67,6 +67,7 @@ function handleCommand(command) {
     'my-articles': '/my-articles',
     favorites: '/favorites',
     profile: '/profile',
+    'admin-users': '/admin/users',
     'admin-tags': '/admin/tags'
   }[command]
 
@@ -129,6 +130,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
                   <el-dropdown-item command="my-articles"><el-icon><Document /></el-icon>我的文章</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item command="profile"><el-icon><User /></el-icon>个人中心</el-dropdown-item>
+                  <el-dropdown-item v-if="isAdmin" divided command="admin-users"><el-icon><UserFilled /></el-icon>用户管理</el-dropdown-item>
                   <el-dropdown-item v-if="isAdmin" command="admin-tags"><el-icon><CollectionTag /></el-icon>标签管理</el-dropdown-item>
                   <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
                 </el-dropdown-menu>

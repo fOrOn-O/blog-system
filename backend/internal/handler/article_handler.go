@@ -142,7 +142,7 @@ func (h *ArticleHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.articleService.Delete(claims.UserID, uint(id)); err != nil {
+	if err := h.articleService.Delete(claims.UserID, claims.Role, uint(id)); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

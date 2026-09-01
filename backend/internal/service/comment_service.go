@@ -32,6 +32,7 @@ type CreateCommentRequest struct {
 type CommentResponse struct {
 	ID        uint              `json:"id"`
 	Content   string            `json:"content"`
+	UserID    uint              `json:"user_id"`
 	User      *UserResponse     `json:"user,omitempty"`
 	ArticleID uint              `json:"article_id"`
 	ParentID  *uint             `json:"parent_id,omitempty"`
@@ -94,14 +95,14 @@ func (s *CommentService) GetByArticleID(articleID uint, page, limit int) ([]Comm
 }
 
 // Delete 删除评论
-func (s *CommentService) Delete(userID, commentID uint) error {
+func (s *CommentService) Delete(userID uint, role string, commentID uint) error {
 	comment, err := s.commentRepo.FindByID(commentID)
 	if err != nil {
 		return errors.New("评论不存在")
 	}
 
 	// 检查权限
-	if comment.UserID != userID {
+	if comment.UserID != userID && role != "admin" {
 		return errors.New("无权删除此评论")
 	}
 
@@ -121,6 +122,7 @@ func toCommentResponse(comment *model.Comment) *CommentResponse {
 	resp := &CommentResponse{
 		ID:        comment.ID,
 		Content:   comment.Content,
+		UserID:    comment.UserID,
 		ArticleID: comment.ArticleID,
 		ParentID:  comment.ParentID,
 		CreatedAt: comment.CreatedAt,

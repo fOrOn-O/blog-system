@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"strconv"
+
 	"blog-system/internal/service"
 	"blog-system/pkg/auth"
 	"blog-system/pkg/response"
@@ -90,4 +93,64 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		Total: total,
 		Pages: (total + int64(limit) - 1) / int64(limit),
 	})
+}
+
+// UpdateUserStatus 封禁或解封普通用户（管理员）
+// PUT /api/v1/admin/users/:id/status
+func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
+	claims := c.MustGet("claims").(*auth.Claims)
+
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "无效的用户ID")
+		return
+	}
+
+	var req service.UpdateUserStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "无效的请求数据: "+err.Error())
+		return
+	}
+
+	user, err := h.userService.UpdateUserStatus(claims.UserID, uint(userID), *req.IsActive)
+	if err != nil {
+		handleAdminUserError(c, err)
+		return
+	}
+
+	response.SuccessWithMessage(c, "用户状态已更新", user)
+}
+
+// ResetUserPassword 重置普通用户密码（管理员）
+// PUT /api/v1/admin/users/:id/password
+func (h *UserHandler) ResetUserPassword(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "无效的用户ID")
+		return
+	}
+
+	var req service.ResetUserPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "无效的请求数据: "+err.Error())
+		return
+	}
+
+	if err := h.userService.ResetUserPassword(uint(userID), req.NewPassword); err != nil {
+		handleAdminUserError(c, err)
+		return
+	}
+
+	response.SuccessWithMessage(c, "密码重置成功", nil)
+}
+
+func handleAdminUserError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrUserNotFound):
+		response.NotFound(c, err.Error())
+	case errors.Is(err, service.ErrCannotDisableSelf), errors.Is(err, service.ErrCannotManageAdmin):
+		response.Forbidden(c, err.Error())
+	default:
+		response.InternalError(c, "用户操作失败")
+	}
 }

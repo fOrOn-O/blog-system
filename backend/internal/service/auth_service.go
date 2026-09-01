@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"blog-system/internal/model"
 	"blog-system/internal/repository"
@@ -41,12 +42,14 @@ type AuthResponse struct {
 
 // UserResponse 用户响应（不包含敏感信息）
 type UserResponse struct {
-	ID       uint   `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Avatar   string `json:"avatar"`
-	Bio      string `json:"bio"`
-	Role     string `json:"role"`
+	ID        uint      `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Avatar    string    `json:"avatar"`
+	Bio       string    `json:"bio"`
+	Role      string    `json:"role"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Register 用户注册
@@ -125,11 +128,13 @@ func (s *AuthService) Login(req LoginRequest) (*AuthResponse, error) {
 // toUserResponse 转换为用户响应
 func toUserResponse(user *model.User) *UserResponse {
 	return &UserResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		Avatar:   user.Avatar,
-		Bio:      user.Bio,
-		Role:     user.Role,
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Avatar:    user.Avatar,
+		Bio:       user.Bio,
+		Role:      user.Role,
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
 	}
 }

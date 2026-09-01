@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -24,7 +25,14 @@ func setupArticleServiceTest(t *testing.T) (*ArticleService, model.User, []model
 	}
 	database.DB = db
 
-	if err := db.AutoMigrate(&model.User{}, &model.Article{}, &model.Tag{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Article{},
+		&model.Tag{},
+		&model.Comment{},
+		&model.Like{},
+		&model.Favorite{},
+	); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
 
@@ -142,4 +150,64 @@ func TestArticleServiceRejectsUnknownTagIDs(t *testing.T) {
 	if after != before {
 		t.Fatalf("invalid article was persisted: before=%d after=%d", before, after)
 	}
+}
+
+func TestArticleServiceDeleteAuthorization(t *testing.T) {
+	articleService, owner, _ := setupArticleServiceTest(t)
+
+	otherUser := model.User{Username: "reader", Email: "reader@example.com", Password: "hashed-password", Role: "user", IsActive: true}
+	admin := model.User{Username: "moderator", Email: "moderator@example.com", Password: "hashed-password", Role: "admin", IsActive: true}
+	if err := database.DB.Create(&otherUser).Error; err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	if err := database.DB.Create(&admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+
+	createArticle := func(title string) *ArticleResponse {
+		t.Helper()
+		article, err := articleService.Create(owner.ID, CreateArticleRequest{Title: title, Content: "content"})
+		if err != nil {
+			t.Fatalf("create article %q: %v", title, err)
+		}
+		return article
+	}
+
+	t.Run("author can delete own article", func(t *testing.T) {
+		article := createArticle("author delete")
+		if err := articleService.Delete(owner.ID, "user", article.ID); err != nil {
+			t.Fatalf("author delete own article: %v", err)
+		}
+		if _, err := articleService.articleRepo.FindByID(article.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("expected article to be deleted, got %v", err)
+		}
+	})
+
+	t.Run("ordinary user cannot delete another user's article", func(t *testing.T) {
+		article := createArticle("unauthorized delete")
+		if err := articleService.Delete(otherUser.ID, "user", article.ID); err == nil {
+			t.Fatal("expected deleting another user's article to be rejected")
+		}
+		if _, err := articleService.articleRepo.FindByID(article.ID); err != nil {
+			t.Fatalf("article was unexpectedly deleted: %v", err)
+		}
+	})
+
+	t.Run("admin can delete another user's article", func(t *testing.T) {
+		article := createArticle("admin delete")
+		if err := articleService.Delete(admin.ID, "admin", article.ID); err != nil {
+			t.Fatalf("admin delete article: %v", err)
+		}
+		if _, err := articleService.articleRepo.FindByID(article.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("expected article to be deleted, got %v", err)
+		}
+	})
+
+	t.Run("admin still cannot edit another user's article", func(t *testing.T) {
+		article := createArticle("admin cannot edit")
+		newTitle := "changed by admin"
+		if _, err := articleService.Update(admin.ID, article.ID, UpdateArticleRequest{Title: &newTitle}); err == nil {
+			t.Fatal("expected admin edit of another user's article to be rejected")
+		}
+	})
 }

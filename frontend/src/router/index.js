@@ -59,6 +59,12 @@ const routes = [
     meta: { title: '搜索结果' }
   },
   {
+    path: '/admin/users',
+    name: 'UserManagement',
+    component: () => import('@/views/UserManagement.vue'),
+    meta: { title: '用户管理', requiresAuth: true, requiresAdmin: true }
+  },
+  {
     path: '/admin/tags',
     name: 'AdminTags',
     component: () => import('@/views/TagManagement.vue'),

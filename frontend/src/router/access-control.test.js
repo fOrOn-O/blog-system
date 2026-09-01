@@ -26,6 +26,18 @@ test('non-admin users cannot open admin pages', () => {
   )
 })
 
+test('non-admin users cannot open user management', () => {
+  const to = {
+    fullPath: '/admin/users',
+    meta: { requiresAuth: true, requiresAdmin: true }
+  }
+
+  assert.deepEqual(
+    resolveRouteAccess(to, { authenticated: true, user: { role: 'user' } }),
+    { name: 'Home' }
+  )
+})
+
 test('admin users can open admin pages', () => {
   const to = {
     fullPath: '/admin/tags',

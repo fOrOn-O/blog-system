@@ -280,14 +280,14 @@ func (s *ArticleService) resolveTags(tagIDs []uint) ([]model.Tag, error) {
 }
 
 // Delete 删除文章
-func (s *ArticleService) Delete(userID, articleID uint) error {
+func (s *ArticleService) Delete(userID uint, role string, articleID uint) error {
 	article, err := s.articleRepo.FindByID(articleID)
 	if err != nil {
 		return errors.New("文章不存在")
 	}
 
 	// 检查权限
-	if article.UserID != userID {
+	if article.UserID != userID && role != "admin" {
 		return errors.New("无权删除此文章")
 	}
 

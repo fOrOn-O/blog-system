@@ -19,3 +19,13 @@ export function changePassword(data) {
 export function getUsers(params) {
   return api.get('/admin/users', { params })
 }
+
+// 封禁或解封用户（管理员）
+export function updateUserStatus(id, isActive) {
+  return api.put(`/admin/users/${id}/status`, { is_active: isActive })
+}
+
+// 重置用户密码（管理员）
+export function resetUserPassword(id, newPassword) {
+  return api.put(`/admin/users/${id}/password`, { new_password: newPassword })
+}

@@ -103,6 +103,8 @@ func SetupRouter() *gin.Engine {
 		admin.Use(middleware.AuthRequired(), middleware.AdminRequired())
 		{
 			admin.GET("/users", userHandler.ListUsers)
+			admin.PUT("/users/:id/status", userHandler.UpdateUserStatus)
+			admin.PUT("/users/:id/password", userHandler.ResetUserPassword)
 
 			// 标签管理路由（管理员）
 			admin.POST("/tags", tagHandler.Create)
