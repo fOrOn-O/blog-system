@@ -28,6 +28,7 @@ func setupArticleServiceTest(t *testing.T) (*ArticleService, model.User, []model
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Article{},
+		&model.ArticleVersion{},
 		&model.Tag{},
 		&model.Comment{},
 		&model.Like{},

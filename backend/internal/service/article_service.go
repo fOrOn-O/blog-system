@@ -224,7 +224,7 @@ func (s *ArticleService) Update(userID, articleID uint, req UpdateArticleRequest
 		article.Status = *req.Status
 	}
 
-	if err := s.articleRepo.Update(article, tags, replaceTags); err != nil {
+	if err := s.articleRepo.Update(article, tags, replaceTags, userID); err != nil {
 		return nil, errors.New("更新文章失败")
 	}
 

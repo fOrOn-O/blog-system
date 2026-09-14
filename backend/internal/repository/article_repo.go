@@ -18,15 +18,18 @@ func NewArticleRepository() *ArticleRepository {
 // Create 创建文章并保存标签关联
 func (r *ArticleRepository) Create(article *model.Article, tags []model.Tag) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
+		article.Version = 1
 		if err := tx.Omit("Tags", "User").Create(article).Error; err != nil {
 			return err
 		}
 
-		if len(tags) == 0 {
-			return nil
+		if len(tags) > 0 {
+			if err := tx.Model(article).Association("Tags").Replace(tags); err != nil {
+				return err
+			}
 		}
 
-		return tx.Model(article).Association("Tags").Replace(tags)
+		return tx.Create(newArticleVersion(article, article.UserID)).Error
 	})
 }
 
@@ -38,18 +41,49 @@ func (r *ArticleRepository) FindByID(id uint) (*model.Article, error) {
 }
 
 // Update 更新文章，并在需要时替换标签关联
-func (r *ArticleRepository) Update(article *model.Article, tags []model.Tag, replaceTags bool) error {
+func (r *ArticleRepository) Update(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var current model.Article
+		if err := tx.First(&current, article.ID).Error; err != nil {
+			return err
+		}
+		contentChanged := current.Title != article.Title ||
+			current.Content != article.Content ||
+			current.Summary != article.Summary ||
+			current.CoverImage != article.CoverImage
+		article.Version = current.Version
+		if contentChanged {
+			article.Version++
+		}
+
 		if err := tx.Omit("Tags", "User").Save(article).Error; err != nil {
 			return err
 		}
 
-		if !replaceTags {
-			return nil
+		if replaceTags {
+			if err := tx.Model(article).Association("Tags").Replace(tags); err != nil {
+				return err
+			}
 		}
 
-		return tx.Model(article).Association("Tags").Replace(tags)
+		if contentChanged {
+			return tx.Create(newArticleVersion(article, createdBy)).Error
+		}
+		return nil
 	})
+}
+
+func newArticleVersion(article *model.Article, createdBy uint) *model.ArticleVersion {
+	return &model.ArticleVersion{
+		ArticleID:  article.ID,
+		VersionNo:  article.Version,
+		Title:      article.Title,
+		Content:    article.Content,
+		Summary:    article.Summary,
+		CoverImage: article.CoverImage,
+		CreatedBy:  createdBy,
+		Source:     model.ArticleVersionSourceUser,
+	}
 }
 
 // Delete 删除文章（级联删除关联数据）

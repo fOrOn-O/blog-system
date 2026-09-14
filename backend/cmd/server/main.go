@@ -28,6 +28,7 @@ func main() {
 	if err := database.AutoMigrate(
 		&model.User{},
 		&model.Article{},
+		&model.ArticleVersion{},
 		&model.Tag{},
 		&model.Comment{},
 		&model.Like{},

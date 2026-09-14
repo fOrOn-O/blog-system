@@ -9,6 +9,7 @@ import (
 // Article 文章模型
 type Article struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
+	Version      uint           `gorm:"not null;default:1" json:"version"`
 	Title        string         `gorm:"size:200;not null" json:"title"`
 	Content      string         `gorm:"type:text;not null" json:"content"`
 	Summary      string         `gorm:"size:500" json:"summary"`
