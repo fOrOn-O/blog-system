@@ -87,6 +87,17 @@ func SetupRouter() *gin.Engine {
 			protected.PUT("/articles/:id", articleHandler.Update)
 			protected.DELETE("/articles/:id", articleHandler.Delete)
 
+			// Agent 业务入口继承用户 JWT 认证，复用 Owner 读取及草稿工作流处理器。
+			agent := protected.Group("/agent")
+			{
+				agent.GET("/articles", articleHandler.ListMyArticles)
+				agent.GET("/articles/:id", articleHandler.GetOwnedArticle)
+				agent.POST("/articles", articleHandler.CreateDraft)
+				agent.PUT("/articles/:id/draft", articleHandler.UpdateDraft)
+				agent.POST("/articles/:id/publish", articleHandler.PublishArticle)
+				agent.POST("/articles/:id/archive", articleHandler.ArchiveArticle)
+			}
+
 			// 点赞路由
 			protected.POST("/articles/:id/like", likeHandler.Like)
 			protected.DELETE("/articles/:id/like", likeHandler.Unlike)
