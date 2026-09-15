@@ -15,6 +15,7 @@ def test_health_and_application_configuration(monkeypatch, tmp_path, app_name):
     monkeypatch.setenv("LOG_LEVEL", "INFO")
     monkeypatch.setenv("BLOG_BACKEND_URL", "http://unavailable.invalid:8080")
     monkeypatch.setenv("BLOG_BACKEND_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("GROQ_API_KEY", "")
     get_settings.cache_clear()
     try:
         from app import main

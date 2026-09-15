@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     blog_backend_url: HttpUrl = HttpUrl("http://localhost:8080")
     blog_backend_timeout_seconds: float = Field(default=10, gt=0, allow_inf_nan=False)
+    groq_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
+    llm_model: str = Field(default="openai/gpt-oss-20b", min_length=1)
+    llm_timeout_seconds: float = Field(default=30, gt=0, allow_inf_nan=False)
+    agent_recursion_limit: int = Field(default=12, ge=2, le=50)
 
     @field_validator("blog_backend_url")
     @classmethod
