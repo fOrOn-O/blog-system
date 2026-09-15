@@ -79,7 +79,7 @@ func TestArticleServiceVersionsAreSequentialAndPreserveHistory(t *testing.T) {
 	previous := readArticleVersions(t, created.ID)
 	for version := uint(2); version <= 3; version++ {
 		content := fmt.Sprintf("<p>V%d</p>", version)
-		if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{Content: &content}); err != nil {
+		if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{ExpectedVersion: version - 1, Content: &content}); err != nil {
 			t.Fatalf("update article to V%d: %v", version, err)
 		}
 		article, err := svc.articleRepo.FindByID(created.ID)
@@ -142,6 +142,7 @@ func TestArticleServiceVersionsOnlyActualContentChanges(t *testing.T) {
 			}
 			original := readArticleVersions(t, created.ID)
 			req := tc.req
+			req.ExpectedVersion = created.Version
 			if tc.name == "tags only" || tc.name == "content and tags" {
 				replacement := []uint{tags[1].ID}
 				req.TagIDs = &replacement
@@ -230,7 +231,8 @@ func TestArticleServiceUpdateRollsBackWhenVersionInsertFails(t *testing.T) {
 	title, content, summary, cover := "New title", "<p>New content</p>", "", ""
 	replacement := []uint{tags[1].ID}
 	req := UpdateArticleRequest{
-		Title: &title, Content: &content, Summary: &summary, CoverImage: &cover,
+		ExpectedVersion: original.Version,
+		Title:           &title, Content: &content, Summary: &summary, CoverImage: &cover,
 		TagIDs: &replacement,
 	}
 	if _, err := svc.Update(user.ID, created.ID, req); err == nil {

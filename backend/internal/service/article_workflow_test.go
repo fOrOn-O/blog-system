@@ -60,7 +60,7 @@ func TestArticleDraftPublishLifecycle(t *testing.T) {
 		t.Fatalf("wrong create draft response: %+v", created)
 	}
 	ids := []uint{tags[0].ID}
-	if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{TagIDs: &ids}); err != nil {
+	if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{ExpectedVersion: 1, TagIDs: &ids}); err != nil {
 		t.Fatal(err)
 	}
 	article := assertWorkflowState(t, svc, created.ID, "draft", 1, 0)
@@ -69,13 +69,13 @@ func TestArticleDraftPublishLifecycle(t *testing.T) {
 	}
 	for version := 2; version <= 5; version++ {
 		content := fmt.Sprintf("<p>VisibleV%d</p>", version)
-		if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{Content: &content}); err != nil {
+		if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{ExpectedVersion: uint(version - 1), Content: &content}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	assertWorkflowState(t, svc, created.ID, "draft", 5, 0)
 	beforePublish := readArticleVersions(t, created.ID)
-	visible, err := svc.PublishArticle(user.ID, created.ID)
+	visible, err := svc.PublishArticle(user.ID, created.ID, PublishArticleRequest{ExpectedVersion: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestArticleDraftPublishLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	title, content, summary, cover := "PrivateTitle", "<p>PrivateBodyV6</p>", "PrivateSummary", "/private.png"
-	working, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{Title: &title, Content: &content, Summary: &summary, CoverImage: &cover})
+	working, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{ExpectedVersion: visible.Version, Title: &title, Content: &content, Summary: &summary, CoverImage: &cover})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestArticleDraftPublishLifecycle(t *testing.T) {
 	assertSameContent(t, &listed[0], visible)
 	beforePublish = readArticleVersions(t, created.ID)
 	for i := 0; i < 2; i++ {
-		if _, err := svc.PublishArticle(user.ID, created.ID); err != nil {
+		if _, err := svc.PublishArticle(user.ID, created.ID, PublishArticleRequest{ExpectedVersion: working.Version}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -180,13 +180,13 @@ func TestArticleArchiveIsTerminalAndIdempotent(t *testing.T) {
 				t.Fatal("archive changed snapshots")
 			}
 			content := "forbidden"
-			if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{Content: &content}); !errors.Is(err, model.ErrArticleArchivedEdit) {
+			if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{ExpectedVersion: 1, Content: &content}); !errors.Is(err, model.ErrArticleArchivedEdit) {
 				t.Fatalf("draft edit: %v", err)
 			}
-			if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{Content: &content}); !errors.Is(err, model.ErrArticleArchivedEdit) {
+			if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{ExpectedVersion: 1, Content: &content}); !errors.Is(err, model.ErrArticleArchivedEdit) {
 				t.Fatalf("legacy edit: %v", err)
 			}
-			if _, err := svc.PublishArticle(user.ID, created.ID); !errors.Is(err, model.ErrArticleArchivedPublish) {
+			if _, err := svc.PublishArticle(user.ID, created.ID, PublishArticleRequest{ExpectedVersion: 1}); !errors.Is(err, model.ErrArticleArchivedPublish) {
 				t.Fatalf("publish: %v", err)
 			}
 			if _, err := svc.GetByID(created.ID); !errors.Is(err, model.ErrArticleNotFound) {
@@ -219,12 +219,15 @@ func TestArticleWorkflowAuthorizationAndOwnerPagination(t *testing.T) {
 	createWorkflowArticle(t, svc, other.ID, true)
 	content := "unauthorized"
 	actions := []func(uint, uint) (*ArticleResponse, error){
-		svc.GetOwnedArticle, svc.PublishArticle, svc.ArchiveArticle,
+		svc.GetOwnedArticle, svc.ArchiveArticle,
 		func(uid, id uint) (*ArticleResponse, error) {
-			return svc.UpdateDraft(uid, id, UpdateDraftRequest{Content: &content})
+			return svc.PublishArticle(uid, id, PublishArticleRequest{ExpectedVersion: draft.Version})
 		},
 		func(uid, id uint) (*ArticleResponse, error) {
-			return svc.Update(uid, id, UpdateArticleRequest{Content: &content})
+			return svc.UpdateDraft(uid, id, UpdateDraftRequest{ExpectedVersion: 1, Content: &content})
+		},
+		func(uid, id uint) (*ArticleResponse, error) {
+			return svc.Update(uid, id, UpdateArticleRequest{ExpectedVersion: 1, Content: &content})
 		},
 	}
 	for _, action := range actions {
@@ -271,7 +274,7 @@ func TestLegacyHumanWritesPublishAtomically(t *testing.T) {
 	}
 	content := "<p>HumanV2</p>"
 	ids := []uint{tags[1].ID}
-	updated, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{Content: &content, TagIDs: &ids})
+	updated, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{ExpectedVersion: 1, Content: &content, TagIDs: &ids})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +295,7 @@ func TestArticleWorkflowSnapshotFailureRollsBackAllFields(t *testing.T) {
 			svc, user, tags := setupArticleServiceTest(t)
 			created := createWorkflowArticle(t, svc, user.ID, mode == "draft")
 			oldIDs := []uint{tags[0].ID}
-			if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{TagIDs: &oldIDs}); err != nil {
+			if _, err := svc.UpdateDraft(user.ID, created.ID, UpdateDraftRequest{ExpectedVersion: 1, TagIDs: &oldIDs}); err != nil {
 				t.Fatal(err)
 			}
 			original, err := svc.articleRepo.FindByID(created.ID)
@@ -308,7 +311,7 @@ func TestArticleWorkflowSnapshotFailureRollsBackAllFields(t *testing.T) {
 			rejectArticleVersionInserts(t)
 			title, content, summary, cover := "Updated", "<p>Updated</p>", "", ""
 			ids := []uint{tags[1].ID}
-			req := UpdateDraftRequest{Title: &title, Content: &content, Summary: &summary, CoverImage: &cover, TagIDs: &ids}
+			req := UpdateDraftRequest{ExpectedVersion: 1, Title: &title, Content: &content, Summary: &summary, CoverImage: &cover, TagIDs: &ids}
 			if mode == "human publish" {
 				_, err = svc.Update(user.ID, created.ID, UpdateArticleRequest(req))
 			} else {
@@ -374,7 +377,7 @@ func TestArticlePublicReadFailsClosedForLegacyDataAndCaches(t *testing.T) {
 			if _, err := svc.GetByID(legacy.ID); !errors.Is(err, model.ErrArticleNotFound) {
 				t.Fatalf("legacy content leaked: %v", err)
 			}
-			if _, err := svc.PublishArticle(user.ID, legacy.ID); !errors.Is(err, model.ErrArticleSnapshotMissing) {
+			if _, err := svc.PublishArticle(user.ID, legacy.ID, PublishArticleRequest{ExpectedVersion: legacy.Version}); !errors.Is(err, model.ErrArticleSnapshotMissing) {
 				t.Fatalf("missing snapshot published: %v", err)
 			}
 			for _, search := range []bool{false, true} {
@@ -409,7 +412,7 @@ func TestFavoritesOnlyExposePublishedSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := "UnpublishedSecret"
-	if _, err := svc.UpdateDraft(owner.ID, created.ID, UpdateDraftRequest{Content: &content}); err != nil {
+	if _, err := svc.UpdateDraft(owner.ID, created.ID, UpdateDraftRequest{ExpectedVersion: 1, Content: &content}); err != nil {
 		t.Fatal(err)
 	}
 	items, total, err := favorites.GetUserFavorites(reader.ID, 1, 10)
@@ -451,7 +454,7 @@ func TestPublicReadsRejectLateStaleCacheRefill(t *testing.T) {
 		database.CacheSet("articles:list:public:v2:1:10", string(list), time.Hour)
 	}
 	content := "NewPublishedContent"
-	if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{Content: &content}); err != nil {
+	if _, err := svc.Update(user.ID, created.ID, UpdateArticleRequest{ExpectedVersion: 1, Content: &content}); err != nil {
 		t.Fatal(err)
 	}
 	refill()

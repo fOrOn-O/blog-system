@@ -7,6 +7,7 @@ import (
 	"blog-system/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ArticleRepository 文章数据访问层
@@ -47,23 +48,27 @@ func (r *ArticleRepository) FindByID(id uint) (*model.Article, error) {
 }
 
 // UpdateDraft 只保存工作内容，不推进发布状态或公开版本。
-func (r *ArticleRepository) UpdateDraft(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
-	return r.updateContent(article, tags, replaceTags, createdBy, false)
+func (r *ArticleRepository) UpdateDraft(article *model.Article, tags []model.Tag, replaceTags bool, createdBy, expectedVersion uint) error {
+	return r.updateContent(article, tags, replaceTags, createdBy, expectedVersion, false)
 }
 
 // UpdateAndPublish 将人工编辑、快照和公开版本在同一事务中提交。
-func (r *ArticleRepository) UpdateAndPublish(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
-	return r.updateContent(article, tags, replaceTags, createdBy, true)
+func (r *ArticleRepository) UpdateAndPublish(article *model.Article, tags []model.Tag, replaceTags bool, createdBy, expectedVersion uint) error {
+	return r.updateContent(article, tags, replaceTags, createdBy, expectedVersion, true)
 }
 
-func (r *ArticleRepository) updateContent(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint, publish bool) error {
+func (r *ArticleRepository) updateContent(article *model.Article, tags []model.Tag, replaceTags bool, createdBy, expectedVersion uint, publish bool) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
-		current, err := findOwnedArticle(tx, createdBy, article.ID)
+		current, err := findOwnedArticleForUpdate(tx, createdBy, article.ID)
 		if err != nil {
 			return err
 		}
 		if current.Status == model.ArticleStatusArchived {
 			return model.ErrArticleArchivedEdit
+		}
+		// 必须先检查版本，再判断内容是否变化，不能放行过期的空更新或标签更新。
+		if err := checkExpectedVersion(current, expectedVersion); err != nil {
+			return err
 		}
 		contentChanged := current.Title != article.Title ||
 			current.Content != article.Content ||
@@ -204,6 +209,22 @@ func findOwnedArticle(db *gorm.DB, userID, articleID uint) (*model.Article, erro
 	return &article, nil
 }
 
+// 仅用于写事务。MySQL/InnoDB 行锁保持到提交或回滚，覆盖版本检查及后续写入。
+// SQLite 驱动省略 FOR UPDATE，使用数据库自身的事务锁，不能等同于 MySQL 行锁测试。
+func findOwnedArticleForUpdate(tx *gorm.DB, userID, articleID uint) (*model.Article, error) {
+	return findOwnedArticle(tx.Clauses(clause.Locking{Strength: "UPDATE"}), userID, articleID)
+}
+
+func checkExpectedVersion(article *model.Article, expectedVersion uint) error {
+	if expectedVersion == 0 {
+		return model.ErrExpectedVersionRequired
+	}
+	if article.Version != expectedVersion {
+		return model.ErrVersionConflict
+	}
+	return nil
+}
+
 func (r *ArticleRepository) FindOwnedByID(userID, articleID uint) (*model.Article, error) {
 	return findOwnedArticle(database.DB.Preload("User").Preload("Tags"), userID, articleID)
 }
@@ -232,14 +253,17 @@ func requireArticleSnapshot(tx *gorm.DB, articleID, version uint) error {
 	return err
 }
 
-func (r *ArticleRepository) PublishArticle(userID, articleID uint) error {
+func (r *ArticleRepository) PublishArticle(userID, articleID, expectedVersion uint) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
-		article, err := findOwnedArticle(tx, userID, articleID)
+		article, err := findOwnedArticleForUpdate(tx, userID, articleID)
 		if err != nil {
 			return err
 		}
 		if article.Status == model.ArticleStatusArchived {
 			return model.ErrArticleArchivedPublish
+		}
+		if err := checkExpectedVersion(article, expectedVersion); err != nil {
+			return err
 		}
 		if err := requireArticleSnapshot(tx, article.ID, article.Version); err != nil {
 			return err

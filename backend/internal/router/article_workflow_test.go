@@ -109,11 +109,11 @@ func TestArticleWorkflowRoutes(t *testing.T) {
 	if owned.ViewCount != 0 {
 		t.Fatal("owner get counted a view")
 	}
-	published := httpArticle(t, workflowRequest(t, h, "POST", path+"/publish", owner, "", 200))
+	published := httpArticle(t, workflowRequest(t, h, "POST", path+"/publish", owner, `{"expected_version":1}`, 200))
 	if published.Status != "published" || published.PublishedVersion != 1 || published.Version != 1 {
 		t.Fatalf("publish=%+v", published)
 	}
-	working := httpArticle(t, workflowRequest(t, h, "PUT", path+"/draft", owner, `{"content":"<p>PrivateSecret</p>"}`, 200))
+	working := httpArticle(t, workflowRequest(t, h, "PUT", path+"/draft", owner, `{"content":"<p>PrivateSecret</p>","expected_version":1}`, 200))
 	if working.Version != 2 || working.PublishedVersion != 1 || working.Status != "published" {
 		t.Fatalf("working=%+v", working)
 	}
@@ -124,7 +124,7 @@ func TestArticleWorkflowRoutes(t *testing.T) {
 	if data := workflowRequest(t, h, "GET", "/articles/search?keyword=PrivateSecret", "", "", 200); string(data) != "[]" {
 		t.Fatalf("search leaked: %s", data)
 	}
-	workflowRequest(t, h, "POST", path+"/publish", owner, "", 200)
+	workflowRequest(t, h, "POST", path+"/publish", owner, `{"expected_version":2}`, 200)
 	public = httpArticle(t, workflowRequest(t, h, "GET", path, "", "", 200))
 	if public.Content != working.Content || public.Version != 2 {
 		t.Fatal("pending publish failed")
@@ -132,9 +132,9 @@ func TestArticleWorkflowRoutes(t *testing.T) {
 	workflowRequest(t, h, "POST", path+"/archive", owner, "", 200)
 	workflowRequest(t, h, "POST", path+"/archive", owner, "", 200)
 	workflowRequest(t, h, "GET", path, "", "", 404)
-	workflowRequest(t, h, "PUT", path+"/draft", owner, `{"content":"forbidden"}`, 409)
-	workflowRequest(t, h, "PUT", path, owner, `{"content":"forbidden"}`, 409)
-	workflowRequest(t, h, "POST", path+"/publish", owner, "", 409)
+	workflowRequest(t, h, "PUT", path+"/draft", owner, `{"content":"forbidden","expected_version":2}`, 409)
+	workflowRequest(t, h, "PUT", path, owner, `{"content":"forbidden","expected_version":2}`, 409)
+	workflowRequest(t, h, "POST", path+"/publish", owner, `{"expected_version":2}`, 409)
 	var ownedList []service.ArticleResponse
 	if err := json.Unmarshal(workflowRequest(t, h, "GET", "/user/articles?status=archived", owner, "", 200), &ownedList); err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestArticleWorkflowRoutes(t *testing.T) {
 		t.Fatalf("legacy create=%+v", legacy)
 	}
 	legacyPath := fmt.Sprintf("/articles/%d", legacy.ID)
-	updated := httpArticle(t, workflowRequest(t, h, "PUT", legacyPath, owner, `{"content":"<p>HumanV2</p>"}`, 200))
+	updated := httpArticle(t, workflowRequest(t, h, "PUT", legacyPath, owner, `{"content":"<p>HumanV2</p>","expected_version":1}`, 200))
 	public = httpArticle(t, workflowRequest(t, h, "GET", legacyPath, "", "", 200))
 	if updated.Version != 2 || updated.PublishedVersion != 2 || public.Content != updated.Content {
 		t.Fatal("legacy update did not immediately publish V2")
@@ -163,6 +163,9 @@ func TestArticleContentRoutesRejectLifecycleFields(t *testing.T) {
 	} {
 		for _, field := range []string{`"status":"published"`, `"status":"archived"`, `"published_version":99`, `"version":99`} {
 			body := `{"title":"Injected","content":"Injected",` + field + `}`
+			if target.method == "PUT" {
+				body = `{"expected_version":1,` + body[1:]
+			}
 			workflowRequest(t, h, target.method, target.path, owner, body, 400)
 		}
 	}
@@ -188,9 +191,9 @@ func TestArticleRoutesRequireAuthenticationAndOwnership(t *testing.T) {
 	path := fmt.Sprintf("/articles/%d", created.ID)
 	for _, target := range []struct{ method, path, body string }{
 		{"GET", fmt.Sprintf("/user/articles/%d", created.ID), ""},
-		{"PUT", path + "/draft", `{"content":"forbidden"}`},
-		{"PUT", path, `{"content":"forbidden"}`},
-		{"POST", path + "/publish", ""}, {"POST", path + "/archive", ""},
+		{"PUT", path + "/draft", `{"content":"forbidden","expected_version":1}`},
+		{"PUT", path, `{"content":"forbidden","expected_version":1}`},
+		{"POST", path + "/publish", `{"expected_version":1}`}, {"POST", path + "/archive", ""},
 	} {
 		workflowRequest(t, h, target.method, target.path, "", target.body, 401)
 		workflowRequest(t, h, target.method, target.path, otherAdmin, target.body, 403)

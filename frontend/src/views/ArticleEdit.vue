@@ -13,6 +13,9 @@ const router = useRouter()
 const isEdit = computed(() => !!route.params.id)
 const articleId = computed(() => route.params.id)
 
+// 保存开始编辑时看到的工作版本，发生冲突时保留原值和用户输入。
+const expectedVersion = ref(null)
+
 const form = ref({
   title: '',
   content: '',
@@ -36,6 +39,7 @@ async function fetchArticle() {
   try {
     const res = await getOwnedArticle(articleId.value)
     const article = res.data
+    expectedVersion.value = article.version
     form.value = {
       title: article.title,
       content: article.content || '',
@@ -121,7 +125,11 @@ async function handleSubmit() {
   submitting.value = true
   try {
     if (isEdit.value) {
-      await updateArticle(articleId.value, form.value)
+      const res = await updateArticle(articleId.value, {
+        ...form.value,
+        expected_version: expectedVersion.value
+      })
+      expectedVersion.value = res.data.version
       ElMessage.success('更新成功')
     } else {
       const res = await createArticle(form.value)

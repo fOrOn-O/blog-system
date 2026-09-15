@@ -38,16 +38,22 @@ type CreateDraftRequest struct {
 
 // UpdateDraftRequest 只修改工作内容。
 type UpdateDraftRequest struct {
-	Title      *string `json:"title" binding:"omitempty,min=1,max=200"`
-	Content    *string `json:"content" binding:"omitempty,min=1"`
-	Summary    *string `json:"summary"`
-	CoverImage *string `json:"cover_image"`
-	TagIDs     *[]uint `json:"tag_ids"`
+	ExpectedVersion uint    `json:"expected_version" binding:"required,min=1"`
+	Title           *string `json:"title" binding:"omitempty,min=1,max=200"`
+	Content         *string `json:"content" binding:"omitempty,min=1"`
+	Summary         *string `json:"summary"`
+	CoverImage      *string `json:"cover_image"`
+	TagIDs          *[]uint `json:"tag_ids"`
 }
 
 // 旧人类接口共享内容字段，但业务方法固定为立即发布。
 type CreateArticleRequest CreateDraftRequest
 type UpdateArticleRequest UpdateDraftRequest
+
+// PublishArticleRequest 明确调用方批准公开的工作版本。
+type PublishArticleRequest struct {
+	ExpectedVersion uint `json:"expected_version" binding:"required,min=1"`
+}
 
 // TagResponse 文章标签响应
 type TagResponse struct {
@@ -253,9 +259,9 @@ func (s *ArticleService) updateArticle(userID, articleID uint, req UpdateDraftRe
 		article.CoverImage = *req.CoverImage
 	}
 	if publish {
-		err = s.articleRepo.UpdateAndPublish(article, tags, replaceTags, userID)
+		err = s.articleRepo.UpdateAndPublish(article, tags, replaceTags, userID, req.ExpectedVersion)
 	} else {
-		err = s.articleRepo.UpdateDraft(article, tags, replaceTags, userID)
+		err = s.articleRepo.UpdateDraft(article, tags, replaceTags, userID, req.ExpectedVersion)
 	}
 	if err != nil {
 		return nil, err
@@ -290,8 +296,8 @@ func (s *ArticleService) ListMyArticles(userID uint, page, limit int, status str
 	return responses, total, nil
 }
 
-func (s *ArticleService) PublishArticle(userID, articleID uint) (*ArticleResponse, error) {
-	if err := s.articleRepo.PublishArticle(userID, articleID); err != nil {
+func (s *ArticleService) PublishArticle(userID, articleID uint, req PublishArticleRequest) (*ArticleResponse, error) {
+	if err := s.articleRepo.PublishArticle(userID, articleID, req.ExpectedVersion); err != nil {
 		return nil, err
 	}
 	invalidateArticleCache(articleID)

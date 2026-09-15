@@ -101,9 +101,10 @@ func TestArticleServiceCreateAndUpdateCoverAndTags(t *testing.T) {
 	emptySummary := ""
 	replacementTagIDs := []uint{tags[1].ID}
 	updated, err := articleService.Update(user.ID, created.ID, UpdateArticleRequest{
-		Summary:    &emptySummary,
-		CoverImage: &emptyCover,
-		TagIDs:     &replacementTagIDs,
+		ExpectedVersion: created.Version,
+		Summary:         &emptySummary,
+		CoverImage:      &emptyCover,
+		TagIDs:          &replacementTagIDs,
 	})
 	if err != nil {
 		t.Fatalf("update article: %v", err)
@@ -207,7 +208,7 @@ func TestArticleServiceDeleteAuthorization(t *testing.T) {
 	t.Run("admin still cannot edit another user's article", func(t *testing.T) {
 		article := createArticle("admin cannot edit")
 		newTitle := "changed by admin"
-		if _, err := articleService.Update(admin.ID, article.ID, UpdateArticleRequest{Title: &newTitle}); err == nil {
+		if _, err := articleService.Update(admin.ID, article.ID, UpdateArticleRequest{ExpectedVersion: article.Version, Title: &newTitle}); err == nil {
 			t.Fatal("expected admin edit of another user's article to be rejected")
 		}
 	})

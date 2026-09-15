@@ -14,11 +14,13 @@ const (
 )
 
 var (
-	ErrArticleNotFound        = errors.New("文章不存在")
-	ErrArticleForbidden       = errors.New("无权访问或修改此文章")
-	ErrArticleArchivedEdit    = errors.New("文章已归档，不能继续编辑")
-	ErrArticleArchivedPublish = errors.New("文章已归档，不能发布")
-	ErrArticleSnapshotMissing = errors.New("文章内容版本快照缺失，不能发布")
+	ErrArticleNotFound         = errors.New("文章不存在")
+	ErrArticleForbidden        = errors.New("无权访问或修改此文章")
+	ErrArticleArchivedEdit     = errors.New("文章已归档，不能继续编辑")
+	ErrArticleArchivedPublish  = errors.New("文章已归档，不能发布")
+	ErrArticleSnapshotMissing  = errors.New("文章内容版本快照缺失，不能发布")
+	ErrVersionConflict         = errors.New("文章已被其他操作更新，请刷新后重新编辑")
+	ErrExpectedVersionRequired = errors.New("必须提供大于 0 的 expected_version")
 )
 
 // Article 文章模型

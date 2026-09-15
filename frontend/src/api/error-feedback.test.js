@@ -3,6 +3,14 @@ import assert from 'node:assert/strict'
 
 import { getApiErrorFeedback } from './error-feedback.js'
 
+test('article version conflict preserves the server message and editing session', () => {
+  const message = '文章已被其他操作更新，请刷新后重新编辑'
+  assert.deepEqual(
+    getApiErrorFeedback({ status: 409, data: { message }, url: '/articles/18' }),
+    { message, clearSession: false, redirectToLogin: false }
+  )
+})
+
 test('invalid login keeps the server message and does not clear the session', () => {
   assert.deepEqual(
     getApiErrorFeedback({

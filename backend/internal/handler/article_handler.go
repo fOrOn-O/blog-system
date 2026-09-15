@@ -154,6 +154,8 @@ func articleBusinessError(c *gin.Context, err error) {
 		response.NotFound(c, err.Error())
 	case errors.Is(err, model.ErrArticleForbidden):
 		response.Forbidden(c, err.Error())
+	case errors.Is(err, model.ErrVersionConflict):
+		response.Conflict(c, err.Error())
 	case errors.Is(err, model.ErrArticleArchivedEdit), errors.Is(err, model.ErrArticleArchivedPublish), errors.Is(err, model.ErrArticleSnapshotMissing):
 		response.Conflict(c, err.Error())
 	default:
@@ -197,7 +199,14 @@ func (h *ArticleHandler) UpdateDraft(c *gin.Context) {
 }
 
 func (h *ArticleHandler) PublishArticle(c *gin.Context) {
-	h.ownedArticleAction(c, h.articleService.PublishArticle)
+	var req service.PublishArticleRequest
+	if err := bindArticleRequest(c, &req); err != nil {
+		response.BadRequest(c, "无效的请求数据: "+err.Error())
+		return
+	}
+	h.ownedArticleAction(c, func(userID, articleID uint) (*service.ArticleResponse, error) {
+		return h.articleService.PublishArticle(userID, articleID, req)
+	})
 }
 
 func (h *ArticleHandler) ArchiveArticle(c *gin.Context) {
