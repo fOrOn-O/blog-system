@@ -29,15 +29,15 @@ type FavoriteResponse struct {
 
 // FavoriteArticleResponse 收藏的文章响应
 type FavoriteArticleResponse struct {
-	ID        uint           `json:"id"`
+	ID        uint             `json:"id"`
 	Article   *ArticleResponse `json:"article"`
-	CreatedAt time.Time      `json:"created_at"`
+	CreatedAt time.Time        `json:"created_at"`
 }
 
 // Favorite 收藏文章
 func (s *FavoriteService) Favorite(userID, articleID uint) error {
 	// 检查文章是否存在
-	_, err := s.articleRepo.FindByID(articleID)
+	_, err := s.articleRepo.FindPublishedByID(articleID)
 	if err != nil {
 		return errors.New("文章不存在")
 	}

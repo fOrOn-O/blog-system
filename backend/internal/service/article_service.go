@@ -9,6 +9,8 @@ import (
 	"blog-system/internal/database"
 	"blog-system/internal/model"
 	"blog-system/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 // ArticleService 文章服务
@@ -25,25 +27,27 @@ func NewArticleService() *ArticleService {
 	}
 }
 
-// CreateArticleRequest 创建文章请求
-type CreateArticleRequest struct {
+// CreateDraftRequest 只包含内容字段，不具备发布或归档能力。
+type CreateDraftRequest struct {
 	Title      string `json:"title" binding:"required,max=200"`
 	Content    string `json:"content" binding:"required"`
 	Summary    string `json:"summary"`
 	CoverImage string `json:"cover_image"`
-	Status     string `json:"status" binding:"omitempty,oneof=draft published archived"`
 	TagIDs     []uint `json:"tag_ids"`
 }
 
-// UpdateArticleRequest 更新文章请求
-type UpdateArticleRequest struct {
+// UpdateDraftRequest 只修改工作内容。
+type UpdateDraftRequest struct {
 	Title      *string `json:"title" binding:"omitempty,min=1,max=200"`
 	Content    *string `json:"content" binding:"omitempty,min=1"`
 	Summary    *string `json:"summary"`
 	CoverImage *string `json:"cover_image"`
-	Status     *string `json:"status" binding:"omitempty,oneof=draft published archived"`
 	TagIDs     *[]uint `json:"tag_ids"`
 }
+
+// 旧人类接口共享内容字段，但业务方法固定为立即发布。
+type CreateArticleRequest CreateDraftRequest
+type UpdateArticleRequest UpdateDraftRequest
 
 // TagResponse 文章标签响应
 type TagResponse struct {
@@ -53,23 +57,33 @@ type TagResponse struct {
 
 // ArticleResponse 文章响应
 type ArticleResponse struct {
-	ID           uint          `json:"id"`
-	Title        string        `json:"title"`
-	Content      string        `json:"content"`
-	Summary      string        `json:"summary"`
-	CoverImage   string        `json:"cover_image"`
-	User         *UserResponse `json:"user,omitempty"`
-	ViewCount    int           `json:"view_count"`
-	LikeCount    int           `json:"like_count"`
-	CommentCount int           `json:"comment_count"`
-	Status       string        `json:"status"`
-	Tags         []TagResponse `json:"tags,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	ID               uint          `json:"id"`
+	Version          uint          `json:"version"`
+	PublishedVersion uint          `json:"published_version"`
+	Title            string        `json:"title"`
+	Content          string        `json:"content"`
+	Summary          string        `json:"summary"`
+	CoverImage       string        `json:"cover_image"`
+	User             *UserResponse `json:"user,omitempty"`
+	ViewCount        int           `json:"view_count"`
+	LikeCount        int           `json:"like_count"`
+	CommentCount     int           `json:"comment_count"`
+	Status           string        `json:"status"`
+	Tags             []TagResponse `json:"tags,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // Create 创建文章
 func (s *ArticleService) Create(userID uint, req CreateArticleRequest) (*ArticleResponse, error) {
+	return s.createArticle(userID, CreateDraftRequest(req), model.ArticleStatusPublished)
+}
+
+func (s *ArticleService) CreateDraft(userID uint, req CreateDraftRequest) (*ArticleResponse, error) {
+	return s.createArticle(userID, req, model.ArticleStatusDraft)
+}
+
+func (s *ArticleService) createArticle(userID uint, req CreateDraftRequest, status string) (*ArticleResponse, error) {
 	tags, err := s.resolveTags(req.TagIDs)
 	if err != nil {
 		return nil, err
@@ -79,12 +93,6 @@ func (s *ArticleService) Create(userID uint, req CreateArticleRequest) (*Article
 	summary := req.Summary
 	if summary == "" && len(req.Content) > 200 {
 		summary = req.Content[:200] + "..."
-	}
-
-	// 设置默认状态
-	status := req.Status
-	if status == "" {
-		status = "published"
 	}
 
 	article := &model.Article{
@@ -101,31 +109,34 @@ func (s *ArticleService) Create(userID uint, req CreateArticleRequest) (*Article
 	}
 
 	// 清除缓存
-	database.CacheDeletePrefix("articles:list:")
+	invalidateArticleCache(article.ID)
 
 	// 重新加载关联数据
-	article, _ = s.articleRepo.FindByID(article.ID)
-	return toArticleResponse(article), nil
+	return s.GetOwnedArticle(userID, article.ID)
 }
 
 // GetByID 获取文章详情
 func (s *ArticleService) GetByID(id uint) (*ArticleResponse, error) {
-	// 尝试从缓存获取
-	cacheKey := fmt.Sprintf("article:%d", id)
+	// 数据库决定当前是否公开，缓存不能绕过状态与发布版本检查。
+	article, err := s.articleRepo.FindPublishedByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, model.ErrArticleNotFound
+		}
+		return nil, err
+	}
+	cacheKey := fmt.Sprintf("article:public:v2:%d", id)
 	if cached, err := database.CacheGet(cacheKey); err == nil {
 		var resp ArticleResponse
-		if err := json.Unmarshal([]byte(cached), &resp); err == nil {
+		if err := json.Unmarshal([]byte(cached), &resp); err == nil && samePublicRevision(resp, article) {
 			return &resp, nil
 		}
 	}
 
-	article, err := s.articleRepo.FindByID(id)
-	if err != nil {
-		return nil, errors.New("文章不存在")
+	// 公共读取在返回前完成计数；Owner 读取不执行此操作。
+	if err := s.articleRepo.IncrementViewCount(id); err != nil {
+		return nil, err
 	}
-
-	// 异步增加浏览量
-	go s.articleRepo.IncrementViewCount(id)
 
 	resp := toArticleResponse(article)
 
@@ -138,25 +149,33 @@ func (s *ArticleService) GetByID(id uint) (*ArticleResponse, error) {
 }
 
 // List 获取文章列表
-func (s *ArticleService) List(page, limit int, status string) ([]ArticleResponse, int64, error) {
+func (s *ArticleService) List(page, limit int, _ string) ([]ArticleResponse, int64, error) {
+	articles, total, err := s.articleRepo.List(page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
 	// 尝试从缓存获取
-	cacheKey := fmt.Sprintf("articles:list:%d:%d:%s", page, limit, status)
+	cacheKey := fmt.Sprintf("articles:list:public:v2:%d:%d", page, limit)
 	if cached, err := database.CacheGet(cacheKey); err == nil {
 		var result struct {
 			Articles []ArticleResponse `json:"articles"`
 			Total    int64             `json:"total"`
 		}
-		if err := json.Unmarshal([]byte(cached), &result); err == nil {
-			return result.Articles, result.Total, nil
+		if err := json.Unmarshal([]byte(cached), &result); err == nil && result.Total == total && len(result.Articles) == len(articles) {
+			valid := true
+			for i := range articles {
+				if !samePublicRevision(result.Articles[i], &articles[i]) {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				return result.Articles, result.Total, nil
+			}
 		}
 	}
 
-	articles, total, err := s.articleRepo.List(page, limit, status)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var responses []ArticleResponse
+	responses := make([]ArticleResponse, 0, len(articles))
 	for _, article := range articles {
 		responses = append(responses, *toArticleResponse(&article))
 	}
@@ -172,6 +191,12 @@ func (s *ArticleService) List(page, limit int, status string) ([]ArticleResponse
 	return responses, total, nil
 }
 
+func samePublicRevision(cached ArticleResponse, article *model.Article) bool {
+	return cached.ID == article.ID && cached.Status == model.ArticleStatusPublished &&
+		cached.Version == article.PublishedVersion && cached.PublishedVersion == article.PublishedVersion &&
+		cached.UpdatedAt.Equal(article.UpdatedAt)
+}
+
 // Search 搜索文章
 func (s *ArticleService) Search(keyword string, page, limit int) ([]ArticleResponse, int64, error) {
 	articles, total, err := s.articleRepo.Search(keyword, page, limit)
@@ -179,7 +204,7 @@ func (s *ArticleService) Search(keyword string, page, limit int) ([]ArticleRespo
 		return nil, 0, err
 	}
 
-	var responses []ArticleResponse
+	responses := make([]ArticleResponse, 0, len(articles))
 	for _, article := range articles {
 		responses = append(responses, *toArticleResponse(&article))
 	}
@@ -189,14 +214,21 @@ func (s *ArticleService) Search(keyword string, page, limit int) ([]ArticleRespo
 
 // Update 更新文章
 func (s *ArticleService) Update(userID, articleID uint, req UpdateArticleRequest) (*ArticleResponse, error) {
-	article, err := s.articleRepo.FindByID(articleID)
+	return s.updateArticle(userID, articleID, UpdateDraftRequest(req), true)
+}
+
+func (s *ArticleService) UpdateDraft(userID, articleID uint, req UpdateDraftRequest) (*ArticleResponse, error) {
+	return s.updateArticle(userID, articleID, req, false)
+}
+
+func (s *ArticleService) updateArticle(userID, articleID uint, req UpdateDraftRequest, publish bool) (*ArticleResponse, error) {
+	article, err := s.articleRepo.FindOwnedByID(userID, articleID)
 	if err != nil {
-		return nil, errors.New("文章不存在")
+		return nil, err
 	}
 
-	// 检查权限
-	if article.UserID != userID {
-		return nil, errors.New("无权修改此文章")
+	if article.Status == model.ArticleStatusArchived {
+		return nil, model.ErrArticleArchivedEdit
 	}
 
 	var tags []model.Tag
@@ -220,24 +252,64 @@ func (s *ArticleService) Update(userID, articleID uint, req UpdateArticleRequest
 	if req.CoverImage != nil {
 		article.CoverImage = *req.CoverImage
 	}
-	if req.Status != nil {
-		article.Status = *req.Status
+	if publish {
+		err = s.articleRepo.UpdateAndPublish(article, tags, replaceTags, userID)
+	} else {
+		err = s.articleRepo.UpdateDraft(article, tags, replaceTags, userID)
 	}
-
-	if err := s.articleRepo.Update(article, tags, replaceTags, userID); err != nil {
-		return nil, errors.New("更新文章失败")
+	if err != nil {
+		return nil, err
 	}
 
 	// 清除缓存
-	database.CacheDelete(fmt.Sprintf("article:%d", articleID))
-	database.CacheDeletePrefix("articles:list:")
+	invalidateArticleCache(articleID)
 
-	article, err = s.articleRepo.FindByID(articleID)
+	return s.GetOwnedArticle(userID, articleID)
+}
+
+func (s *ArticleService) GetOwnedArticle(userID, articleID uint) (*ArticleResponse, error) {
+	article, err := s.articleRepo.FindOwnedByID(userID, articleID)
 	if err != nil {
-		return nil, errors.New("重新加载文章失败")
+		return nil, err
 	}
-
 	return toArticleResponse(article), nil
+}
+
+func (s *ArticleService) ListMyArticles(userID uint, page, limit int, status string) ([]ArticleResponse, int64, error) {
+	if status != "" && status != model.ArticleStatusDraft && status != model.ArticleStatusPublished && status != model.ArticleStatusArchived {
+		return nil, 0, errors.New("无效的文章状态")
+	}
+	articles, total, err := s.articleRepo.ListByOwner(userID, page, limit, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	responses := make([]ArticleResponse, 0, len(articles))
+	for i := range articles {
+		responses = append(responses, *toArticleResponse(&articles[i]))
+	}
+	return responses, total, nil
+}
+
+func (s *ArticleService) PublishArticle(userID, articleID uint) (*ArticleResponse, error) {
+	if err := s.articleRepo.PublishArticle(userID, articleID); err != nil {
+		return nil, err
+	}
+	invalidateArticleCache(articleID)
+	return s.GetOwnedArticle(userID, articleID)
+}
+
+func (s *ArticleService) ArchiveArticle(userID, articleID uint) (*ArticleResponse, error) {
+	if err := s.articleRepo.ArchiveArticle(userID, articleID); err != nil {
+		return nil, err
+	}
+	invalidateArticleCache(articleID)
+	return s.GetOwnedArticle(userID, articleID)
+}
+
+func invalidateArticleCache(articleID uint) {
+	database.CacheDelete(fmt.Sprintf("article:%d", articleID))
+	database.CacheDelete(fmt.Sprintf("article:public:v2:%d", articleID))
+	database.CacheDeletePrefix("articles:list:")
 }
 
 // resolveTags 校验标签ID，并按照请求顺序返回标签
@@ -296,8 +368,7 @@ func (s *ArticleService) Delete(userID uint, role string, articleID uint) error 
 	}
 
 	// 清除缓存
-	database.CacheDelete(fmt.Sprintf("article:%d", articleID))
-	database.CacheDeletePrefix("articles:list:")
+	invalidateArticleCache(articleID)
 
 	return nil
 }
@@ -305,17 +376,19 @@ func (s *ArticleService) Delete(userID uint, role string, articleID uint) error 
 // toArticleResponse 转换为文章响应
 func toArticleResponse(article *model.Article) *ArticleResponse {
 	resp := &ArticleResponse{
-		ID:           article.ID,
-		Title:        article.Title,
-		Content:      article.Content,
-		Summary:      article.Summary,
-		CoverImage:   article.CoverImage,
-		ViewCount:    article.ViewCount,
-		LikeCount:    article.LikeCount,
-		CommentCount: article.CommentCount,
-		Status:       article.Status,
-		CreatedAt:    article.CreatedAt,
-		UpdatedAt:    article.UpdatedAt,
+		ID:               article.ID,
+		Version:          article.Version,
+		PublishedVersion: article.PublishedVersion,
+		Title:            article.Title,
+		Content:          article.Content,
+		Summary:          article.Summary,
+		CoverImage:       article.CoverImage,
+		ViewCount:        article.ViewCount,
+		LikeCount:        article.LikeCount,
+		CommentCount:     article.CommentCount,
+		Status:           article.Status,
+		CreatedAt:        article.CreatedAt,
+		UpdatedAt:        article.UpdatedAt,
 	}
 
 	if article.User.ID > 0 {

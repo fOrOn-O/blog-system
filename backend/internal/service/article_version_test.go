@@ -121,7 +121,6 @@ func TestArticleServiceVersionsOnlyActualContentChanges(t *testing.T) {
 			Summary: ptr("Original summary"), CoverImage: ptr("/uploads/original.png"),
 		}, 1},
 		{"empty update", UpdateArticleRequest{}, 1},
-		{"status only", UpdateArticleRequest{Status: ptr("draft")}, 1},
 		{"tags only", UpdateArticleRequest{}, 1},
 		{"clear tags", UpdateArticleRequest{}, 1},
 		{"content and tags", UpdateArticleRequest{Content: ptr("<p>New content</p>")}, 2},
@@ -165,9 +164,6 @@ func TestArticleServiceVersionsOnlyActualContentChanges(t *testing.T) {
 				t.Fatal("V1 was modified")
 			}
 			assertArticleSnapshot(t, versions[len(versions)-1], article, user.ID)
-			if req.Status != nil && article.Status != *req.Status {
-				t.Fatal("status update was not persisted")
-			}
 			if req.TagIDs != nil {
 				if len(article.Tags) != len(*req.TagIDs) {
 					t.Fatalf("unexpected persisted tags: %#v", article.Tags)
@@ -231,11 +227,11 @@ func TestArticleServiceUpdateRollsBackWhenVersionInsertFails(t *testing.T) {
 		defer database.CacheDelete(key)
 	}
 	rejectArticleVersionInserts(t)
-	title, content, summary, cover, status := "New title", "<p>New content</p>", "", "", "draft"
+	title, content, summary, cover := "New title", "<p>New content</p>", "", ""
 	replacement := []uint{tags[1].ID}
 	req := UpdateArticleRequest{
 		Title: &title, Content: &content, Summary: &summary, CoverImage: &cover,
-		Status: &status, TagIDs: &replacement,
+		TagIDs: &replacement,
 	}
 	if _, err := svc.Update(user.ID, created.ID, req); err == nil {
 		t.Fatal("expected snapshot insert failure")

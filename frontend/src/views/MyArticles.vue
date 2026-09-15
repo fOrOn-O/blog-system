@@ -1,12 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { getArticles, deleteArticle } from '@/api/article'
+import { getMyArticles, deleteArticle } from '@/api/article'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
-const authStore = useAuthStore()
 
 const articles = ref([])
 const loading = ref(false)
@@ -18,17 +16,12 @@ const total = ref(0)
 async function fetchMyArticles() {
   loading.value = true
   try {
-    // 获取所有文章，然后过滤出当前用户的
-    const res = await getArticles({
-      page: 1,
-      limit: 100 // 获取足够多的文章
+    const res = await getMyArticles({
+      page: currentPage.value,
+      limit: pageSize.value
     })
-    const allArticles = res.data || res || []
-    // 过滤出当前用户的文章
-    articles.value = allArticles.filter(
-      article => article.user?.id === authStore.currentUser?.id
-    )
-    total.value = articles.value.length
+    articles.value = res.data || []
+    total.value = res.meta?.total || 0
   } catch (error) {
     console.error('获取文章失败:', error)
   } finally {
@@ -145,12 +138,20 @@ onMounted(() => {
         <!-- 空状态 -->
         <div v-else-if="!loading" class="empty-state">
           <div class="empty-icon">📝</div>
-          <p class="empty-text">你还没有发布过文章</p>
+          <p class="empty-text">你还没有文章</p>
           <button class="btn-primary" @click="router.push('/article/edit')">
             写第一篇文章
           </button>
         </div>
       </div>
+      <el-pagination
+        v-if="total > pageSize"
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next"
+        @current-change="fetchMyArticles"
+      />
     </div>
   </div>
 </template>

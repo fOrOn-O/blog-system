@@ -3,6 +3,8 @@ package repository
 import (
 	"blog-system/internal/database"
 	"blog-system/internal/model"
+
+	"gorm.io/gorm"
 )
 
 // FavoriteRepository 收藏数据访问层
@@ -38,11 +40,16 @@ func (r *FavoriteRepository) GetByUserID(userID uint, page, limit int) ([]model.
 	var favorites []model.Favorite
 	var total int64
 
-	query := database.DB.Model(&model.Favorite{}).Where("user_id = ?", userID)
-	query.Count(&total)
+	query := database.DB.Model(&model.Favorite{}).Where("user_id = ?", userID).
+		Where("article_id IN (?)", publishedArticleQuery(database.DB).Select("articles.id"))
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	offset := (page - 1) * limit
-	err := query.Preload("Article").Preload("Article.User").Preload("Article.Tags").
+	err := query.Preload("Article", func(db *gorm.DB) *gorm.DB {
+		return publishedArticleQuery(db).Select(publishedArticleColumns)
+	}).Preload("Article.User").Preload("Article.Tags").
 		Offset(offset).Limit(limit).
 		Order("created_at DESC").
 		Find(&favorites).Error

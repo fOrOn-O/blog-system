@@ -15,6 +15,15 @@ export function getArticle(id) {
   return api.get(`/articles/${id}`)
 }
 
+// 作者读取最新工作版本，不增加浏览量。
+export function getOwnedArticle(id) {
+  return api.get(`/user/articles/${id}`)
+}
+
+export function getMyArticles(params) {
+  return api.get('/user/articles', { params })
+}
+
 // 创建文章
 export function createArticle(data) {
   return api.post('/articles', data)

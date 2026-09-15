@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"errors"
+
 	"blog-system/internal/database"
 	"blog-system/internal/model"
 
@@ -19,6 +21,10 @@ func NewArticleRepository() *ArticleRepository {
 func (r *ArticleRepository) Create(article *model.Article, tags []model.Tag) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
 		article.Version = 1
+		article.PublishedVersion = 0
+		if article.Status == model.ArticleStatusPublished {
+			article.PublishedVersion = 1
+		}
 		if err := tx.Omit("Tags", "User").Create(article).Error; err != nil {
 			return err
 		}
@@ -40,20 +46,43 @@ func (r *ArticleRepository) FindByID(id uint) (*model.Article, error) {
 	return &article, err
 }
 
-// Update 更新文章，并在需要时替换标签关联
-func (r *ArticleRepository) Update(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
+// UpdateDraft 只保存工作内容，不推进发布状态或公开版本。
+func (r *ArticleRepository) UpdateDraft(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
+	return r.updateContent(article, tags, replaceTags, createdBy, false)
+}
+
+// UpdateAndPublish 将人工编辑、快照和公开版本在同一事务中提交。
+func (r *ArticleRepository) UpdateAndPublish(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint) error {
+	return r.updateContent(article, tags, replaceTags, createdBy, true)
+}
+
+func (r *ArticleRepository) updateContent(article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint, publish bool) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
-		var current model.Article
-		if err := tx.First(&current, article.ID).Error; err != nil {
+		current, err := findOwnedArticle(tx, createdBy, article.ID)
+		if err != nil {
 			return err
+		}
+		if current.Status == model.ArticleStatusArchived {
+			return model.ErrArticleArchivedEdit
 		}
 		contentChanged := current.Title != article.Title ||
 			current.Content != article.Content ||
 			current.Summary != article.Summary ||
 			current.CoverImage != article.CoverImage
 		article.Version = current.Version
+		article.Status = current.Status
+		article.PublishedVersion = current.PublishedVersion
 		if contentChanged {
 			article.Version++
+		}
+		if publish {
+			if !contentChanged {
+				if err := requireArticleSnapshot(tx, article.ID, article.Version); err != nil {
+					return err
+				}
+			}
+			article.Status = model.ArticleStatusPublished
+			article.PublishedVersion = article.Version
 		}
 
 		if err := tx.Omit("Tags", "User").Save(article).Error; err != nil {
@@ -118,50 +147,128 @@ func (r *ArticleRepository) Delete(id uint) error {
 	})
 }
 
-// List 获取文章列表（分页）
-func (r *ArticleRepository) List(page, limit int, status string) ([]model.Article, int64, error) {
+// Public reads select snapshot content only; never fall back to working content.
+// TODO: Backfill legacy snapshots and published_version before production rollout.
+func publishedArticleQuery(db *gorm.DB) *gorm.DB {
+	return db.Model(&model.Article{}).
+		Joins("JOIN article_versions AS published ON published.article_id = articles.id AND published.version_no = articles.published_version").
+		Where("articles.status = ? AND articles.published_version > 0", model.ArticleStatusPublished)
+}
+
+const publishedArticleColumns = `articles.id, articles.user_id, articles.status,
+	articles.published_version AS version, articles.published_version,
+	published.title, published.content, published.summary, published.cover_image,
+	articles.view_count, articles.like_count, articles.comment_count,
+	articles.created_at, articles.updated_at, articles.deleted_at`
+
+func (r *ArticleRepository) FindPublishedByID(id uint) (*model.Article, error) {
+	var article model.Article
+	err := publishedArticleQuery(database.DB).Select(publishedArticleColumns).
+		Preload("User").Preload("Tags").First(&article, id).Error
+	return &article, err
+}
+
+func (r *ArticleRepository) List(page, limit int) ([]model.Article, int64, error) {
+	return listPublishedArticles(publishedArticleQuery(database.DB), page, limit)
+}
+
+func (r *ArticleRepository) Search(keyword string, page, limit int) ([]model.Article, int64, error) {
+	query := publishedArticleQuery(database.DB).
+		Where("(published.title LIKE ? OR published.content LIKE ?)", "%"+keyword+"%", "%"+keyword+"%")
+	return listPublishedArticles(query, page, limit)
+}
+
+func listPublishedArticles(query *gorm.DB, page, limit int) ([]model.Article, int64, error) {
 	var articles []model.Article
 	var total int64
-
-	query := database.DB.Model(&model.Article{})
-	if status != "" {
-		query = query.Where("status = ?", status)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
-
-	query.Count(&total)
-
-	offset := (page - 1) * limit
-	err := query.Preload("User").Preload("Tags").
-		Offset(offset).Limit(limit).
-		Order("created_at DESC").
-		Find(&articles).Error
-
+	err := query.Select(publishedArticleColumns).Preload("User").Preload("Tags").
+		Offset((page - 1) * limit).Limit(limit).
+		Order("articles.created_at DESC, articles.id DESC").Find(&articles).Error
 	return articles, total, err
 }
 
-// Search 搜索文章
-func (r *ArticleRepository) Search(keyword string, page, limit int) ([]model.Article, int64, error) {
+func findOwnedArticle(db *gorm.DB, userID, articleID uint) (*model.Article, error) {
+	var article model.Article
+	if err := db.First(&article, articleID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, model.ErrArticleNotFound
+		}
+		return nil, err
+	}
+	if article.UserID != userID {
+		return nil, model.ErrArticleForbidden
+	}
+	return &article, nil
+}
+
+func (r *ArticleRepository) FindOwnedByID(userID, articleID uint) (*model.Article, error) {
+	return findOwnedArticle(database.DB.Preload("User").Preload("Tags"), userID, articleID)
+}
+
+func (r *ArticleRepository) ListByOwner(userID uint, page, limit int, status string) ([]model.Article, int64, error) {
+	query := database.DB.Model(&model.Article{}).Where("user_id = ?", userID)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
 	var articles []model.Article
 	var total int64
-
-	query := database.DB.Model(&model.Article{}).
-		Where("title LIKE ? OR content LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
-
-	query.Count(&total)
-
-	offset := (page - 1) * limit
-	err := query.Preload("User").Preload("Tags").
-		Offset(offset).Limit(limit).
-		Order("created_at DESC").
-		Find(&articles).Error
-
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.Preload("User").Preload("Tags").Offset((page - 1) * limit).Limit(limit).
+		Order("created_at DESC, id DESC").Find(&articles).Error
 	return articles, total, err
+}
+
+func requireArticleSnapshot(tx *gorm.DB, articleID, version uint) error {
+	var snapshot model.ArticleVersion
+	err := tx.Where("article_id = ? AND version_no = ?", articleID, version).First(&snapshot).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.ErrArticleSnapshotMissing
+	}
+	return err
+}
+
+func (r *ArticleRepository) PublishArticle(userID, articleID uint) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		article, err := findOwnedArticle(tx, userID, articleID)
+		if err != nil {
+			return err
+		}
+		if article.Status == model.ArticleStatusArchived {
+			return model.ErrArticleArchivedPublish
+		}
+		if err := requireArticleSnapshot(tx, article.ID, article.Version); err != nil {
+			return err
+		}
+		return tx.Model(article).Updates(map[string]interface{}{
+			"status":            model.ArticleStatusPublished,
+			"published_version": article.Version,
+		}).Error
+	})
+}
+
+// Repeated archive is idempotent; retain the last published version pointer.
+func (r *ArticleRepository) ArchiveArticle(userID, articleID uint) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		article, err := findOwnedArticle(tx, userID, articleID)
+		if err != nil {
+			return err
+		}
+		if article.Status == model.ArticleStatusArchived {
+			return nil
+		}
+		return tx.Model(article).Update("status", model.ArticleStatusArchived).Error
+	})
 }
 
 // IncrementViewCount 增加浏览量
 func (r *ArticleRepository) IncrementViewCount(id uint) error {
 	return database.DB.Model(&model.Article{}).Where("id = ?", id).
-		UpdateColumn("view_count", database.DB.Raw("view_count + 1")).Error
+		UpdateColumn("view_count", gorm.Expr("view_count + 1")).Error
 }
 
 // UpdateLikeCount 更新点赞数

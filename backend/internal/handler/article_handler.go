@@ -1,13 +1,18 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"strconv"
 
+	"blog-system/internal/model"
 	"blog-system/internal/service"
 	"blog-system/pkg/auth"
 	"blog-system/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 // ArticleHandler 文章处理器
@@ -28,7 +33,7 @@ func (h *ArticleHandler) Create(c *gin.Context) {
 	claims := c.MustGet("claims").(*auth.Claims)
 
 	var req service.CreateArticleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindArticleRequest(c, &req); err != nil {
 		response.BadRequest(c, "无效的请求数据: "+err.Error())
 		return
 	}
@@ -64,9 +69,7 @@ func (h *ArticleHandler) GetByID(c *gin.Context) {
 // GET /api/v1/articles
 func (h *ArticleHandler) List(c *gin.Context) {
 	page, limit := getPagination(c)
-	status := c.DefaultQuery("status", "published")
-
-	articles, total, err := h.articleService.List(page, limit, status)
+	articles, total, err := h.articleService.List(page, limit, model.ArticleStatusPublished)
 	if err != nil {
 		response.InternalError(c, "获取文章列表失败")
 		return
@@ -117,18 +120,121 @@ func (h *ArticleHandler) Update(c *gin.Context) {
 	}
 
 	var req service.UpdateArticleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindArticleRequest(c, &req); err != nil {
 		response.BadRequest(c, "无效的请求数据: "+err.Error())
 		return
 	}
 
 	article, err := h.articleService.Update(claims.UserID, uint(id), req)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		articleBusinessError(c, err)
 		return
 	}
 
 	response.Success(c, article)
+}
+
+// 仅对文章内容接口严格解析，防止状态或发布指针作为隐藏参数传入。
+func bindArticleRequest(c *gin.Context, req interface{}) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(req); err != nil {
+		return err
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return errors.New("请求必须只包含一个 JSON 对象")
+	}
+	return binding.Validator.ValidateStruct(req)
+}
+
+func articleBusinessError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, model.ErrArticleNotFound):
+		response.NotFound(c, err.Error())
+	case errors.Is(err, model.ErrArticleForbidden):
+		response.Forbidden(c, err.Error())
+	case errors.Is(err, model.ErrArticleArchivedEdit), errors.Is(err, model.ErrArticleArchivedPublish), errors.Is(err, model.ErrArticleSnapshotMissing):
+		response.Conflict(c, err.Error())
+	default:
+		response.BadRequest(c, err.Error())
+	}
+}
+
+func (h *ArticleHandler) CreateDraft(c *gin.Context) {
+	claims := c.MustGet("claims").(*auth.Claims)
+	var req service.CreateDraftRequest
+	if err := bindArticleRequest(c, &req); err != nil {
+		response.BadRequest(c, "无效的请求数据: "+err.Error())
+		return
+	}
+	article, err := h.articleService.CreateDraft(claims.UserID, req)
+	if err != nil {
+		articleBusinessError(c, err)
+		return
+	}
+	response.Created(c, article)
+}
+
+func (h *ArticleHandler) UpdateDraft(c *gin.Context) {
+	claims := c.MustGet("claims").(*auth.Claims)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "无效的文章ID")
+		return
+	}
+	var req service.UpdateDraftRequest
+	if err := bindArticleRequest(c, &req); err != nil {
+		response.BadRequest(c, "无效的请求数据: "+err.Error())
+		return
+	}
+	article, err := h.articleService.UpdateDraft(claims.UserID, uint(id), req)
+	if err != nil {
+		articleBusinessError(c, err)
+		return
+	}
+	response.Success(c, article)
+}
+
+func (h *ArticleHandler) PublishArticle(c *gin.Context) {
+	h.ownedArticleAction(c, h.articleService.PublishArticle)
+}
+
+func (h *ArticleHandler) ArchiveArticle(c *gin.Context) {
+	h.ownedArticleAction(c, h.articleService.ArchiveArticle)
+}
+
+func (h *ArticleHandler) GetOwnedArticle(c *gin.Context) {
+	h.ownedArticleAction(c, h.articleService.GetOwnedArticle)
+}
+
+func (h *ArticleHandler) ownedArticleAction(c *gin.Context, action func(uint, uint) (*service.ArticleResponse, error)) {
+	claims := c.MustGet("claims").(*auth.Claims)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "无效的文章ID")
+		return
+	}
+	article, err := action(claims.UserID, uint(id))
+	if err != nil {
+		articleBusinessError(c, err)
+		return
+	}
+	response.Success(c, article)
+}
+
+func (h *ArticleHandler) ListMyArticles(c *gin.Context) {
+	claims := c.MustGet("claims").(*auth.Claims)
+	page, limit := getPagination(c)
+	articles, total, err := h.articleService.ListMyArticles(claims.UserID, page, limit, c.Query("status"))
+	if err != nil {
+		articleBusinessError(c, err)
+		return
+	}
+	response.Paginated(c, articles, response.Meta{
+		Page: page, Limit: limit, Total: total,
+		Pages: (total + int64(limit) - 1) / int64(limit),
+	})
 }
 
 // Delete 删除文章

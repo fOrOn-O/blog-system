@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getArticle, createArticle, updateArticle } from '@/api/article'
+import { getOwnedArticle, createArticle, updateArticle } from '@/api/article'
 import { getTags } from '@/api/tag'
 import { uploadImage } from '@/api/upload'
 import { ElMessage } from 'element-plus'
@@ -34,7 +34,7 @@ async function fetchArticle() {
 
   loading.value = true
   try {
-    const res = await getArticle(articleId.value)
+    const res = await getOwnedArticle(articleId.value)
     const article = res.data
     form.value = {
       title: article.title,
