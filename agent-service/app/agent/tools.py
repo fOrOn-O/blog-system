@@ -31,12 +31,12 @@ ARTICLE_FIELDS = {
 
 
 def article_data(article: Article) -> dict:
-    # Do not send author account details, counters, headers or client objects to the LLM.
+    # 不向模型发送作者账号详情、计数、请求头或客户端对象。
     return article.model_dump(mode="json", include=ARTICLE_FIELDS)
 
 
 def safe_tool_error(error: Exception) -> str:
-    """Return fixed messages, never provider/backend exception text or validation inputs."""
+    """返回固定消息，不暴露模型服务或后端的异常原文及校验输入。"""
     mappings = (
         (AuthenticationError, "authentication_required", "用户身份无效，请重新登录。"),
         (AuthorizationError, "permission_denied", "无权访问或修改该文章。"),
@@ -123,5 +123,22 @@ async def update_draft(
     return {"ok": True, "data": article_data(article)}
 
 
-# Capability restriction applies to both model binding and actual ToolNode execution.
-AGENT_TOOLS = (get_article, list_my_articles, create_draft, update_draft)
+@tool
+async def get_version_diff(
+    article_id: PositiveInt,
+    from_version: PositiveInt,
+    to_version: PositiveInt,
+    runtime: ToolRuntime[AgentContext],
+) -> dict:
+    """只读比较本人文章的两个历史版本，要求 from_version < to_version，可跨版本。
+
+    Go 确定性比较标题、摘要、封面和 HTML 语义块；不比较状态、标签或行内格式。
+    """
+    result = await runtime.context.blog_client.get_version_diff(
+        article_id, from_version, to_version, access_token=runtime.context.access_token,
+    )
+    return {"ok": True, "data": result.model_dump(mode="json")}
+
+
+# 模型绑定和 ToolNode 实际执行使用同一份工具白名单。
+AGENT_TOOLS = (get_article, list_my_articles, create_draft, update_draft, get_version_diff)

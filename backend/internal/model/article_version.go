@@ -1,13 +1,18 @@
 package model
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrArticleVersionNotFound = errors.New("文章历史版本不存在")
 
 const (
 	ArticleVersionSourceUser  = "user"
 	ArticleVersionSourceAgent = "agent"
 )
 
-// ArticleVersion records an immutable snapshot of an article's content.
+// ArticleVersion 记录文章内容的不可变快照。
 type ArticleVersion struct {
 	ID         uint   `gorm:"primaryKey"`
 	ArticleID  uint   `gorm:"not null;uniqueIndex:idx_article_versions_article_version"`

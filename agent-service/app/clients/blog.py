@@ -16,6 +16,7 @@ from app.clients.models import (
     Article,
     ArticlePage,
     ArticleStatus,
+    ArticleVersionDiff,
     CreateDraftInput,
     UpdateDraftInput,
 )
@@ -28,8 +29,12 @@ class _ArticleEnvelope(BaseModel):
     data: Article
 
 
+class _VersionDiffEnvelope(BaseModel):
+    data: ArticleVersionDiff
+
+
 class BlogClient:
-    """Reuse connections, but pass user credentials separately on every call."""
+    """复用连接，每次调用分别传入当前用户的凭据。"""
 
     def __init__(
         self,
@@ -82,6 +87,19 @@ class BlogClient:
         return await self._request(
             "GET", "/api/v1/agent/articles", access_token, ArticlePage, params=params
         )
+
+    async def get_version_diff(
+        self, article_id: int, from_version: int, to_version: int, *, access_token: str,
+    ) -> ArticleVersionDiff:
+        self._require_positive_int(from_version, "from_version")
+        self._require_positive_int(to_version, "to_version")
+        if from_version >= to_version:
+            raise ValueError("from_version must be less than to_version")
+        result = await self._request(
+            "GET", self._article_path(article_id) + "/diff", access_token, _VersionDiffEnvelope,
+            params={"from_version": from_version, "to_version": to_version},
+        )
+        return result.data
 
     async def create_draft(self, draft: CreateDraftInput, *, access_token: str) -> Article:
         result = await self._request(
@@ -148,7 +166,7 @@ class BlogClient:
                 headers={"Authorization": f"Bearer {access_token}"},
             )
         except httpx.RequestError:
-            # Raw httpx errors may retain headers or echo a token; do not chain them.
+            # httpx 原始异常可能保留请求头或包含令牌，不保留异常链。
             raise BlogBackendUnavailableError(
                 "Go backend is unavailable or the request timed out", method=method, path=path
             ) from None
@@ -169,7 +187,7 @@ class BlogClient:
                     404: ArticleNotFoundError, 409: VersionConflictError,
                 }.get(status, BlogRequestError)
                 raise error_type(message, **context)
-            # Neither server error bodies nor redirects are safe business messages.
+            # 服务端错误响应体和重定向信息不应作为安全的业务消息对外返回。
             raise BlogBackendError("Go backend returned an unexpected HTTP status", **context)
 
         try:

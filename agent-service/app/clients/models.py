@@ -72,3 +72,41 @@ class Pagination(BaseModel):
 class ArticlePage(BaseModel):
     data: list[Article]
     meta: Pagination
+
+
+class TextFieldChange(BaseModel):
+    changed: bool
+    before: str
+    after: str
+
+
+class ArticleFieldChanges(BaseModel):
+    title: TextFieldChange
+    summary: TextFieldChange
+    cover_image: TextFieldChange
+
+
+class ContentBlock(BaseModel):
+    type: Literal["heading", "paragraph", "list_item", "blockquote", "code_block"]
+    text: str
+
+
+class ContentBlockChange(BaseModel):
+    operation: Literal["insert", "delete", "modify"]
+    before_index: Annotated[int, Field(ge=0)] | None
+    after_index: Annotated[int, Field(ge=0)] | None
+    before: ContentBlock | None
+    after: ContentBlock | None
+
+
+class ContentChanges(BaseModel):
+    changed: bool
+    changes: list[ContentBlockChange]
+
+
+class ArticleVersionDiff(BaseModel):
+    article_id: PositiveInt
+    from_version: PositiveInt
+    to_version: PositiveInt
+    field_changes: ArticleFieldChanges
+    content: ContentChanges

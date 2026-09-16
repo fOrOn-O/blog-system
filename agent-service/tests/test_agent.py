@@ -49,7 +49,7 @@ def tool_call(name, args, call_id="call-1"):
 
 
 class ScriptedModel:
-    """A model stub only; StateGraph, ToolNode, BlogClient and HTTP parsing are real."""
+    """仅替换模型；StateGraph、ToolNode、BlogClient 和 HTTP 解析均使用真实实现。"""
 
     def __init__(self, responses):
         self.responses = list(responses)
@@ -184,11 +184,12 @@ async def test_create_then_update_preserves_payload_and_version(settings, articl
     assert json.loads(model.inputs[2][-1].content)["data"]["published_version"] == 0
 
 
-def test_only_four_tools_and_no_runtime_credentials_in_model_schema(settings):
+def test_only_allowed_tools_and_no_runtime_credentials_in_model_schema(settings):
     model = ScriptedModel([])
     runner = AgentRunner(model, settings=settings)
     expected = {
         "get_article": {"article_id"},
+        "get_version_diff": {"article_id", "from_version", "to_version"},
         "list_my_articles": {"page", "limit", "status"},
         "create_draft": {"title", "content", "summary", "cover_image", "tag_ids"},
         "update_draft": {"article_id", "expected_version", "title", "content", "summary", "cover_image", "tag_ids"},

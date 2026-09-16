@@ -101,6 +101,7 @@ Client 不自动跟随重定向、不重试请求、不记录 Header 或 Token�
 | --- | --- | --- |
 | `get_article(article_id, *, access_token)` | `Article` | `GET /articles/:id` |
 | `list_my_articles(*, access_token, page=1, limit=10, status=None)` | `ArticlePage` | `GET /articles` |
+| `get_version_diff(article_id, from_version, to_version, *, access_token)` | `ArticleVersionDiff` | `GET /articles/:id/diff?from_version=...&to_version=...` |
 | `create_draft(draft: CreateDraftInput, *, access_token)` | `Article` | `POST /articles` |
 | `update_draft(article_id, draft: UpdateDraftInput, *, access_token)` | `Article` | `PUT /articles/:id/draft` |
 | `publish_article(article_id, *, expected_version, access_token)` | `Article` | `POST /articles/:id/publish` |
@@ -153,10 +154,11 @@ State 只有 `MessagesState.messages`。每次运行从新的 HumanMessage 开�
 `AgentContext` 仅携带当前 run 的 JWT 和 BlogClient；ToolRuntime 在执行工具时注入它，
 JWT 不写入消息、普通 State、Prompt 或模型工具参数，也不出现在 Context 的 repr 中。
 
-模型绑定与 ToolNode 执行使用同一份四工具白名单：
+模型绑定与 ToolNode 执行使用同一份五工具白名单：
 
 - `get_article(article_id)`：返回工作内容、Version、PublishedVersion 和标签。
 - `list_my_articles(page=1, limit=10, status=None)`：返回本人文章与分页。
+- `get_version_diff(article_id, from_version, to_version)`：只读比较本人文章的两个历史版本，要求 `0 < from_version < to_version`，支持非相邻版本。
 - `create_draft(title, content, summary='', cover_image='', tag_ids=None)`：只创建草稿。
 - `update_draft(article_id, expected_version, title=None, content=None, summary=None, cover_image=None, tag_ids=None)`：只更新工作版本。
 
@@ -206,3 +208,27 @@ Go 服务或互联网，不消耗模型 Token。覆盖无工具回答、完整�
 白名单限制、非法工具/参数、版本冲突、后端异常和步数上限。
 LangGraph 本身会依赖 checkpoint 和 LangSmith 软件包，本项目未启用持久化或追踪服务。
 真实 Groq 及真实 Go 全链路验证需在具备 Key、JWT 和 Go 服务后单独进行；不能以假模型测试代替。
+
+## 确定性版本 Diff
+
+Diff 由 Go Service 根据不可变快照计算，不调用 LLM。Python 只通过 BlogClient 调用
+受 JWT 和所有权保护的 Go Agent API；工具参数不包含用户身份，JWT 由 ToolRuntime 注入。
+不需要启动模型服务即可直接调用 `BlogClient.get_version_diff(...)`。
+
+`ArticleVersionDiff` 返回 `article_id`、`from_version`、`to_version`、`field_changes` 和 `content`。
+`field_changes` 固定包含 title、summary、cover_image 的 `{changed, before, after}`；
+`content` 包含 `{changed, changes}`，其中每项记录块的 `operation`、`before_index`、
+`after_index`、`before`、`after`。块包含 `{type, text}`，索引从 0 开始；缺失的一侧为 null。
+没有变化时 `changes` 为 `[]`。状态、标签、PublishedVersion、计数及作者信息不参与比较。
+
+HTML 先归一化成 heading、paragraph、list_item、blockquote、code_block，再比较有序块。
+本阶段忽略行内格式、属性、标题级别和列表/引用嵌套深度；普通文本空白合并，代码块保留缩进和换行。
+因此 `<p>Redis</p>` 与 `<p><strong>Redis</strong></p>` 可视为相同内容。
+正文图片、嵌入媒体及表格结构不在本阶段语义比较范围内；这不是完整富文本 Diff，
+`content.changed=false` 只表示归一化后的语义块相同，不表示原始 HTML 完全相同。
+Diff 文本是数据，展示方应按纯文本转义，不将其作为 HTML 执行。
+
+400、401、403、404 和 5xx 复用既有 BlogClient 错误映射。
+缺失历史版本使用 404，因此仍映射为 `ArticleNotFoundError` 和工具的 `article_not_found`；
+既有 409 映射保持不变，Diff 本身不执行工作版本冲突检查，不更新任何业务数据。
+完整 Go API 响应示例与算法说明见 [后端 README](../backend/README.md)。

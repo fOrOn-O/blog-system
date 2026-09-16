@@ -92,6 +92,7 @@ func SetupRouter() *gin.Engine {
 			{
 				agent.GET("/articles", articleHandler.ListMyArticles)
 				agent.GET("/articles/:id", articleHandler.GetOwnedArticle)
+				agent.GET("/articles/:id/diff", articleHandler.GetVersionDiff)
 				agent.POST("/articles", articleHandler.CreateDraft)
 				agent.PUT("/articles/:id/draft", articleHandler.UpdateDraft)
 				agent.POST("/articles/:id/publish", articleHandler.PublishArticle)

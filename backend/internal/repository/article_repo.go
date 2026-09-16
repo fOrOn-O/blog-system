@@ -152,8 +152,8 @@ func (r *ArticleRepository) Delete(id uint) error {
 	})
 }
 
-// Public reads select snapshot content only; never fall back to working content.
-// TODO: Backfill legacy snapshots and published_version before production rollout.
+// 公开读取仅使用已发布快照的内容，不回退到工作版本内容。
+// TODO: 上线前补齐历史数据的版本快照和 published_version。
 func publishedArticleQuery(db *gorm.DB) *gorm.DB {
 	return db.Model(&model.Article{}).
 		Joins("JOIN article_versions AS published ON published.article_id = articles.id AND published.version_no = articles.published_version").
@@ -229,6 +229,23 @@ func (r *ArticleRepository) FindOwnedByID(userID, articleID uint) (*model.Articl
 	return findOwnedArticle(database.DB.Preload("User").Preload("Tags"), userID, articleID)
 }
 
+// FindOwnedVersions 先校验文章归属，再查询快照，不读取其他文章的历史版本。
+func (r *ArticleRepository) FindOwnedVersions(userID, articleID, from, to uint) (*model.ArticleVersion, *model.ArticleVersion, error) {
+	if _, err := findOwnedArticle(database.DB, userID, articleID); err != nil {
+		return nil, nil, err
+	}
+	var versions []model.ArticleVersion
+	err := database.DB.Where("article_id = ? AND version_no IN ?", articleID, []uint{from, to}).
+		Order("version_no ASC").Find(&versions).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(versions) != 2 {
+		return nil, nil, model.ErrArticleVersionNotFound
+	}
+	return &versions[0], &versions[1], nil
+}
+
 func (r *ArticleRepository) ListByOwner(userID uint, page, limit int, status string) ([]model.Article, int64, error) {
 	query := database.DB.Model(&model.Article{}).Where("user_id = ?", userID)
 	if status != "" {
@@ -275,7 +292,7 @@ func (r *ArticleRepository) PublishArticle(userID, articleID, expectedVersion ui
 	})
 }
 
-// Repeated archive is idempotent; retain the last published version pointer.
+// 重复归档保持幂等，并保留最后一次发布的版本指针。
 func (r *ArticleRepository) ArchiveArticle(userID, articleID uint) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {
 		article, err := findOwnedArticle(tx, userID, articleID)
