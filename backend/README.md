@@ -219,6 +219,51 @@ delete 的 after/after_index 为 null。不返回未变块，没有内容变化�
 因此 content.changed 表示归一化语义变化，不等同于快照原始 HTML 字节变化。
 返回文本应作为纯文本转义展示，不应直接作为 HTML 执行。
 
+## HTML 结构化分块（Task 09）
+
+`internal/chunking` 提供纯函数，只将 HTML 转换成结构化 Chunk，不访问数据库、调用 LLM，
+也不提供 HTTP API、Agent Tool、向量字段或索引写入。调用方负责取得已授权的文章内容。
+
+```go
+import "blog-system/internal/chunking"
+
+options := chunking.DefaultOptions()
+chunks, err := chunking.ChunkHTML(articleHTML, options)
+// 处理 err 后，可按需调用 chunking.RenderText(chunks[i]) 获取纯文本。
+```
+
+每个 Chunk 只保存 `index`、`heading_path` 和 `blocks`。
+Heading 包含 `level`（1～6）和 `text`，正文块包含 `type` 和 `text`；不保存 DOM、属性或重复的 Content 字段。
+标题更新采用栈：移除当前路径中级别数值大于或等于新标题的节点，再追加新标题。
+没有标题的正文使用空路径；跳级标题不生成虚构的中间层级。每次出现标题都开始新的结构分组，
+相同标题文字再次出现也视为新的段落范围；只有标题而没有正文的分组不生成 Chunk。
+
+默认尺寸配置：`TargetSize=800`、`MaxSize=1200`、`MaxOverflow=120`。
+配置要求 `0 < TargetSize <= MaxSize`，溢出额度非负且与上限相加不会产生整数溢出。
+尺寸通过集中辅助函数按 rune 计算，计入正文块间的两个换行符，不计入 HeadingPath。
+因此渲染后的完整文本可能比正文尺寸更长；未来采用 token 预算时需另行评估标题上下文开销。
+
+- 同一标题路径内优先保留、合并完整块。达到 TargetSize 后通常沿块边界结束；
+  若剩余尾部可以在 MaxSize 内全部合并，则继续合并，避免不必要的小尾块。
+- 多个块的合并不超过 MaxSize；单个块在 MaxSize + MaxOverflow 内可保持完整，并独占 Chunk。
+- 超出该阈值的普通块优先按中英文句末标点切分，最后按 rune 兜底。
+  代码块改用行边界，只有过长的单行才按 rune 兜底，不分析编程语言。
+- 优先使用 MaxSize 内最后一个句/行边界；若没有，则可使用溢出额度内的首个边界；
+  仍没有边界才按 MaxSize 个 rune 切分。最后一片可在溢出额度内保留。
+- 所有片段保持顺序，标点、空白及代码换行归属原片段；片段直接拼接等于归一化原块。
+  文本 overlap 为 0，仅通过 HeadingPath 提供结构上下文。
+
+共享的 `internal/htmlcontent` 负责解析与遍历，保留标题级别，但不依赖 Diff 或 Chunker DTO。
+Chunker 使用文档解析，忽略 head、script、style、template 和注释；
+Diff 保留原有片段解析入口和模型，继续忽略标题级别，Task 08 的比较语义不变。
+
+v1 限制：普通文本空白归一化，代码保留缩进和换行（CRLF/CR 统一为 LF）；
+不保留行内格式、HTML 属性、列表编号或列表/引用的嵌套深度。
+图片、嵌入媒体和表格结构没有专用模型，不保证完整表达这些元素。
+句末判断是确定性标点规则，可能把缩写或小数中的句点当作边界；rune 兜底不保证 Unicode 字素簇完整。
+空正文块被忽略，标题本身只存入路径。`RenderText` 按需连接路径和正文，不是原 HTML 的无损还原。
+渲染结果仍应作为纯文本处理，不应直接当作 HTML 执行。
+
 ## 默认账号
 
 系统首次启动时会自动创建默认管理员账号：
