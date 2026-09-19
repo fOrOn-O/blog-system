@@ -134,3 +134,14 @@ class ArticleVersionChunks(BaseModel):
     article_id: PositiveInt
     version_no: PositiveInt
     chunks: list[ArticleChunk]
+
+
+class ArticleVersion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    article_id: PositiveInt
+    version_no: PositiveInt
+    title: str
+    content: str
+    summary: str
+    cover_image: str

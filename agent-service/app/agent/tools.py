@@ -7,6 +7,7 @@ from langgraph.prebuilt.tool_node import ToolInvocationError
 from pydantic import Field
 
 from app.agent.context import AgentContext
+from app.agent.errors import CanonicalReadRequiredError, MultipleProposalSubmissionsError, ProposalAlreadySubmittedError, WorkspaceRequiredError
 from app.core.rag import get_rag_service
 from app.rag.errors import RagError
 from app.rag.models import assemble_context
@@ -41,6 +42,10 @@ def article_data(article: Article) -> dict:
 def safe_tool_error(error: Exception) -> str:
     """返回固定消息，不暴露模型服务或后端的异常原文及校验输入。"""
     mappings = (
+        (WorkspaceRequiredError, "workspace_required", "当前没有活动文章工作区，无法生成编辑提案，请先选择文章及版本。"),
+        (CanonicalReadRequiredError, "canonical_read_required", "请先读取活动工作区的完整历史版本，阅读工具结果后再提交提案。"),
+        (ProposalAlreadySubmittedError, "proposal_already_submitted", "本次运行已经生成一份提案，未保存文章，请开启新的请求继续调整。"),
+        (MultipleProposalSubmissionsError, "multiple_proposal_submissions", "每轮只能提交一份提案，本轮多份提案均未接受，请单独提交。"),
         (AuthenticationError, "authentication_required", "用户身份无效，请重新登录。"),
         (AuthorizationError, "permission_denied", "无权访问或修改该文章。"),
         (ArticleNotFoundError, "article_not_found", "文章不存在。"),

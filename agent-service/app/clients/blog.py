@@ -18,6 +18,7 @@ from app.clients.models import (
     ArticleStatus,
     ArticleVersionDiff,
     ArticleVersionChunks,
+    ArticleVersion,
     CreateDraftInput,
     UpdateDraftInput,
 )
@@ -36,6 +37,10 @@ class _VersionDiffEnvelope(BaseModel):
 
 class _VersionChunksEnvelope(BaseModel):
     data: ArticleVersionChunks
+
+
+class _ArticleVersionEnvelope(BaseModel):
+    data: ArticleVersion
 
 
 class BlogClient:
@@ -117,6 +122,16 @@ class BlogClient:
         indices = [chunk.index for chunk in result.data.chunks]
         if indices != list(range(len(indices))):
             raise BlogBackendError("Go backend returned invalid chunk indices", method="GET", path=path)
+        return result.data
+
+    async def get_article_version(
+        self, article_id: int, version_no: int, *, access_token: str,
+    ) -> ArticleVersion:
+        self._require_positive_int(version_no, "version_no")
+        path = self._article_path(article_id) + f"/versions/{version_no}"
+        result = await self._request("GET", path, access_token, _ArticleVersionEnvelope)
+        if result.data.article_id != article_id or result.data.version_no != version_no:
+            raise BlogBackendError("Go backend returned a mismatched article version", method="GET", path=path)
         return result.data
 
     async def create_draft(self, draft: CreateDraftInput, *, access_token: str) -> Article:

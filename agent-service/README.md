@@ -1,6 +1,6 @@
 # Blog Agent Service
 
-FastAPI 服务提供进程健康检查、集中配置、异步 BlogClient、LangGraph Single Agent 和版本内 Dense RAG。
+FastAPI 服务提供进程健康检查、集中配置、异步 BlogClient、LangGraph Single Agent、版本内 Dense RAG 和文章编辑提案。
 BlogClient 通过 HTTP 调用 Go Agent API，由 Go 执行认证授权、业务规则和数据库事务。
 本服务不连接博客数据库，也不依赖 Go Backend 在线才能启动。
 
@@ -105,6 +105,7 @@ Client 不自动跟随重定向、不重试请求、不记录 Header 或 Token�
 | `list_my_articles(*, access_token, page=1, limit=10, status=None)` | `ArticlePage` | `GET /articles` |
 | `get_version_diff(article_id, from_version, to_version, *, access_token)` | `ArticleVersionDiff` | `GET /articles/:id/diff?from_version=...&to_version=...` |
 | `get_version_chunks(article_id, version_no, *, access_token)` | `ArticleVersionChunks` | `GET /articles/:id/versions/:version/chunks` |
+| `get_article_version(article_id, version_no, *, access_token)` | `ArticleVersion` | `GET /articles/:id/versions/:version` |
 | `create_draft(draft: CreateDraftInput, *, access_token)` | `Article` | `POST /articles` |
 | `update_draft(article_id, draft: UpdateDraftInput, *, access_token)` | `Article` | `PUT /articles/:id/draft` |
 | `publish_article(article_id, *, expected_version, access_token)` | `Article` | `POST /articles/:id/publish` |
@@ -154,10 +155,10 @@ START → call_model → 有 tool_calls → tools（ToolNode）→ call_model
 
 State 只有 `MessagesState.messages`。每次运行从新的 HumanMessage 开始，
 没有跨运行的对话记忆、Checkpointer、HITL 或流式接口。
-`AgentContext` 携带当前 run 的 JWT、BlogClient 和可选 RAG 服务；ToolRuntime 在执行工具时注入它，
+`AgentContext` 携带当前 run 的 JWT、BlogClient、可选 RAG 服务，以及 Task 11 的可选工作区和运行内提案容器；ToolRuntime 在执行工具时注入它，
 JWT 不写入消息、普通 State、Prompt 或模型工具参数，也不出现在 Context 的 repr 中。
 
-模型绑定与 ToolNode 执行使用同一份六工具白名单：
+旧 `run()` 入口的模型绑定与 ToolNode 执行使用同一份六工具白名单：
 
 - `get_article(article_id)`：返回工作内容、Version、PublishedVersion 和标签。
 - `list_my_articles(page=1, limit=10, status=None)`：返回本人文章与分页。
@@ -374,3 +375,89 @@ Go 原文校对及真实 LangGraph/ToolNode/JWT Context 回路。内存模式不
 Go Task 09 按字符/语义块分块，而 E5 超过模型的 512 token 上限时会截断 embedding 输入，
 详见 [E5 模型说明](https://huggingface.co/intfloat/multilingual-e5-small)。原文仍完整保存；本任务不增加 token 重分块。
 每次检索为保证 Go 是权限与内容真源会重新获取整份版本分块，当前以正确性优先，尚未优化该开销。
+
+## Task 11：文章写作 / 编辑提案
+
+Task 11 使用 `AgentRunner.run_with_response()`，返回 `AgentResponse(answer, proposal)`。
+它支持无工作区的普通问答，也支持绑定现有历史版本的重写、扩写、精简、结论、语气和结构调整。
+旧 `run()` 仍返回 `AIMessage`，保留 Task 01～10 的工具行为；**需要只生成提案时必须使用新入口**。
+没有新增 FastAPI 聊天路由或前端功能。
+
+```python
+from app.agent.models import AgentWorkspace
+from app.agent.runner import AgentRunner
+
+runner = AgentRunner()
+
+
+async def propose_edit(message: str, access_token: str, article_id: int, version_no: int):
+    # ID 来自调用方选择的工作区，不从模型回答或工具参数中提取；最终权限仍由 Go 判断。
+    result = await runner.run_with_response(
+        message,
+        access_token=access_token,
+        workspace=AgentWorkspace(article_id=article_id, version_no=version_no),
+    )
+    return result.model_dump(mode="json")
+
+
+async def chat(message: str, access_token: str):
+    return (await runner.run_with_response(message, access_token=access_token)).model_dump(mode="json")
+```
+
+结构化返回示例：
+
+```json
+{
+  "answer": "已生成编辑提案，尚未保存。",
+  "proposal": {
+    "article_id": 23,
+    "base_version_no": 7,
+    "proposed_content": "<h1>Redis</h1><p>完整编辑后的正文。</p><p>保留的其他段落。</p>",
+    "change_summary": ["改写介绍段，保留其他段落"]
+  }
+}
+```
+
+普通问答的 `proposal` 为 `null`。提案模型没有持久化 ID、审批状态、时间戳或新版本号；
+`base_version_no` 始终是工作区选择的历史版本，并不表示当前最新工作版本。
+
+调用链：
+
+```text
+调用方的 AgentWorkspace + 当前 JWT → 每次运行独立的 AgentContext
+→ read_workspace_article（无模型可见参数）
+→ BlogClient.get_article_version → Go JWT / Owner 校验 → 指定 ArticleVersion
+→ 原样完整 HTML 返回同一个 Agent LLM → 生成完整 proposed_content + change_summary
+→ submit_article_edit_proposal → Go 再次校验该版本 → 校验提案
+→ 当前运行的 ProposalCapture → AgentResponse.proposal
+```
+
+读取接口为 `GET /api/v1/agent/articles/:id/versions/:version`，返回快照的文章 ID、版本号、
+Title、Content、Summary 和 CoverImage；不混入 Article 的当前工作内容、状态、标签或计数。
+Python 不访问业务数据库，Qdrant、Task 10 的 RenderText 和 `get_article` 的当前工作内容都不能充当编辑基准。
+提交前必须已有成功的 `read_workspace_article` 结果进入上一轮消息；同一轮并行读取/提交不能跳过该要求。
+提交时再次读取 Go，若身份失效、权限不符或版本消失，按原有安全错误模型拒绝，提案不会被捕获。
+
+`submit_article_edit_proposal` 的模型参数只有 `proposed_content` 和 `change_summary`。
+文章/版本绑定来自冻结的 `AgentWorkspace`，JWT 来自 Runtime；模型额外传入的身份字段不能覆盖它们。
+`ProposalCapture` 每次运行重新创建，只暂存该次读取结果和第一份成功提案，不解析 LLM 最终自然语言中的 JSON，
+不跨请求保留记忆、不持久化。并发请求分别持有自己的工作区、JWT 和提案。
+同一模型轮次包含多次提交时，在 Go 校验前全部拒绝，返回 `multiple_proposal_submissions`，不按网络完成顺序挑选。
+跨轮次只接受第一份成功的单次提交，后续提交返回 `proposal_already_submitted`，不会覆盖已捕获提案。
+
+新入口的白名单固定为四个既有只读工具（get/list/diff/search）和上述两个工作区工具。
+模型绑定和 ToolNode 均不注册 create_draft、update_draft、publish、archive 或索引操作，
+即使模型要求执行这些名字，也无法通过新入口触发业务写入。RAG 仍使用 Task 10 原有版本内检索逻辑。
+旧入口与新入口复用同一个模型实例和同一个 `build_graph` 构造函数，分别缓存对应白名单的图；
+StateGraph 的节点、边和 MessagesState 不变，没有写作工具中的第二个 LLM。
+
+提案校验使用标准库 HTMLParser：拒绝空正文、纯文本、Markdown 包裹、标签未闭合/不匹配、
+空内容以及脚本/事件属性等明显活动内容，检查 change_summary 是非空字符串列表。
+校验不改写 HTML，不生成 patch，不做 HTML 分块；要求显式闭合非 void 标签，符合编辑器通常输出的 HTML 片段形式。
+它不能确定模型是否语义上遗漏了原文，也不是浏览器级完整 HTML/XSS sanitizer；全文保留由模型指令约束。
+展示提案应按不可信内容处理。Task 12/13 的最终应用与安全流程仍需重新授权、检查基础版本、执行最终内容校验及必要的 HTML 安全处理，
+然后由 Go 在事务中保存并生成版本；人类审批和这些应用流程本任务均未实现。
+
+测试使用 Fake Model、MockTransport 和 Go SQLite 内存库，不需要真实 Groq、下载 embedding 权重或启动 Qdrant。
+Python 测试验证提案链路仅发 GET，所有 BlogClient 写方法均未调用，并验证非法写工具不能执行；
+Go 测试对照重复读取前后的 Article 与全部 ArticleVersion，确认内容、版本、PublishedVersion、标签、计数及缓存不变。

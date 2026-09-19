@@ -385,3 +385,27 @@ Service 通过 Repository 获取指定不可变快照，调用现有 Task 09 `Ch
 `text` 仅是 API 派生表示，未添加到 Task 09 内部 Chunk 模型或数据库；空分块返回 `[]`。
 Python 只能通过此 API 获得分块；本接口不自动建立或更新任何向量索引。
 本地 Qdrant、embedding 和显式索引操作见 [Agent Service README](../agent-service/README.md#task-10指定文章版本的-dense-rag)。
+
+## Task 11：读取编辑基准历史版本
+
+`GET /api/v1/agent/articles/:id/versions/:version` 为 Agent 编辑提案提供完整的历史内容。
+继承 Agent JWT 中间件，Service 复用 Repository 的 `FindOwnedVersion`，先校验文章归属，再读取该文章的指定快照。
+即使当前 Article 已更新或存在其他 PublishedVersion，也只返回请求的历史版本，不回退到工作内容或其他文章。
+
+响应沿用 `{code, message, data}`，`data` 包含：
+
+```json
+{
+  "article_id": 23,
+  "version_no": 7,
+  "title": "Redis",
+  "content": "<h1>Redis</h1><p>该历史版本的完整 HTML。</p>",
+  "summary": "摘要",
+  "cover_image": "/cover.png"
+}
+```
+
+401 表示身份无效；非所有者（包括其他管理员）返回 403；文章/版本不存在或文章已删除返回 404；
+非正整数或超出范围的 ID/版本返回 400。未增加提案写接口或数据表。
+此读取不修改正文、Article.Version、PublishedVersion、标签、计数或版本快照，也不增加浏览量或失效缓存。
+Python 在读取原文和提交运行内提案时均调用此 GET；提案只存在于 Python 的本次运行结果中，尚不能应用或发布。
