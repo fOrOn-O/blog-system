@@ -1,5 +1,8 @@
 # Blog System API
 
+旧库缺少文章版本快照时，请使用独立的[历史文章版本回填命令](docs/article-version-backfill.md)。
+命令默认只检查，不随服务启动执行；不要通过公开读取工作正文来绕过缺失快照。
+
 一个使用 Go + Gin + GORM 构建的博客系统后端 API。
 
 ## 项目特性
