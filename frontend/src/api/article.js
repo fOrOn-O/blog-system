@@ -20,6 +20,19 @@ export function getOwnedArticle(id) {
   return api.get(`/user/articles/${id}`)
 }
 
+export const getArticleVersions = (id, page = 1) => api.get(`/user/articles/${id}/versions`, { params: { page, limit: 20 } })
+export const getArticleVersion = (id, version) => api.get(`/agent/articles/${id}/versions/${version}`)
+export const getVersionDiff = (id, from, to) => api.get(`/agent/articles/${id}/diff`, { params: { from_version: from, to_version: to } })
+export const createDraft = data => api.post('/articles/drafts', data)
+export const saveDraft = (id, data) => api.put(`/articles/${id}/draft`, data)
+export const publishArticle = (id, version) => api.post(`/articles/${id}/publish`, { expected_version: version })
+export const archiveArticle = id => api.post(`/articles/${id}/archive`)
+
+// 只投影允许的字段，批准操作直接到 Go，不经过 Agent。
+const proposalBody = proposal => ({ base_version_no: proposal.base_version_no, proposed_content: proposal.proposed_content })
+export const previewEditProposal = proposal => api.post(`/articles/${proposal.article_id}/edit-proposal/preview`, proposalBody(proposal))
+export const applyEditProposal = proposal => api.post(`/articles/${proposal.article_id}/edit-proposal/apply`, proposalBody(proposal))
+
 export function getMyArticles(params) {
   return api.get('/user/articles', { params })
 }

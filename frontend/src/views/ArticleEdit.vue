@@ -1,11 +1,14 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { getOwnedArticle, createArticle, updateArticle } from '@/api/article'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+import { getOwnedArticle, createArticle, updateArticle, createDraft, saveDraft, publishArticle, archiveArticle, getArticleVersions, getArticleVersion, getVersionDiff } from '@/api/article'
 import { getTags } from '@/api/tag'
 import { uploadImage } from '@/api/upload'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import RichTextEditor from '@/components/RichTextEditor.vue'
+import AgentAssistantPanel from '@/components/AgentAssistantPanel.vue'
+import ArticleDiff from '@/components/ArticleDiff.vue'
+import { sanitizeArticleHTML } from '@/utils/article-html'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +18,25 @@ const articleId = computed(() => route.params.id)
 
 // 保存开始编辑时看到的工作版本，发生冲突时保留原值和用户输入。
 const expectedVersion = ref(null)
+const currentArticle = ref(null)
+const versions = ref([])
+const historyPage = ref(1)
+const historyTotal = ref(0)
+const historyDiff = ref(null)
+const assistantBusy = ref(false)
+const switching = ref(false)
+const editorUploading = ref(false)
+const loadError = ref('')
+const baseline = ref('')
+let loadSequence = 0
+let savedDestination = null
+const workspace = computed(() => expectedVersion.value && currentArticle.value ? { article_id: Number(articleId.value), version_no: expectedVersion.value } : null)
+const dirty = computed(() => !!baseline.value && JSON.stringify(form.value) !== baseline.value)
+const readOnlyVersion = computed(() => currentArticle.value && expectedVersion.value !== currentArticle.value.version)
+const uploadPending = computed(() => uploading.value || editorUploading.value)
+const workspaceBusy = computed(() => loading.value || submitting.value || assistantBusy.value || switching.value || uploadPending.value)
+const formLocked = computed(() => workspaceBusy.value || !!loadError.value || readOnlyVersion.value || currentArticle.value?.status === 'archived')
+const versionOptions = computed(() => [...new Set([expectedVersion.value, currentArticle.value?.version, ...versions.value.map(v => v.version_no)].filter(Boolean))].sort((a, b) => b-a))
 
 const form = ref({
   title: '',
@@ -32,28 +54,95 @@ const uploading = ref(false)
 const tags = ref([])
 
 // 获取文章详情（编辑模式）
-async function fetchArticle() {
-  if (!isEdit.value) return
-
-  loading.value = true
-  try {
-    const res = await getOwnedArticle(articleId.value)
-    const article = res.data
-    expectedVersion.value = article.version
-    form.value = {
-      title: article.title,
-      content: article.content || '',
-      summary: article.summary || '',
-      cover_image: article.cover_image || '',
-      tag_ids: article.tags?.map(t => t.id) || []
-    }
-  } catch (error) {
-    console.error('获取文章失败:', error)
-    ElMessage.error('文章不存在')
-    router.push('/')
-  } finally {
-    loading.value = false
+function setEditor(article) {
+  form.value = {
+    title: article.title, content: sanitizeArticleHTML(article.content || ''), summary: article.summary || '',
+    cover_image: article.cover_image || '', tag_ids: currentArticle.value?.tags?.map(t => t.id) || []
   }
+  baseline.value = JSON.stringify(form.value)
+}
+
+async function fetchArticle(targetVersion = null) {
+  if (!isEdit.value) return
+  const id = articleId.value
+  const seq = ++loadSequence
+  loading.value = true
+  loadError.value = ''
+  try {
+    const [res, history] = await Promise.all([getOwnedArticle(id), getArticleVersions(id)])
+    const snapshot = targetVersion && targetVersion !== res.data.version ? await getArticleVersion(id, targetVersion) : null
+    if (seq !== loadSequence || id !== articleId.value) return
+    const article = res.data
+    currentArticle.value = article
+    expectedVersion.value = targetVersion || article.version
+    versions.value = history.data
+    historyPage.value = 1
+    historyTotal.value = history.meta.total
+    historyDiff.value = null
+    setEditor(snapshot?.data || article)
+  } catch {
+    if (seq === loadSequence) loadError.value = '文章或版本刷新失败，请重试。已完成的应用不会自动重试。'
+  } finally {
+    if (seq === loadSequence) loading.value = false
+  }
+}
+
+async function confirmDiscardLocal() {
+  if (!dirty.value) return true
+  try { await ElMessageBox.confirm('此操作会放弃未保存的本地修改，继续吗？', '未保存修改', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }); return true } catch { return false }
+}
+async function switchWorkspace(version = null) {
+  if (workspaceBusy.value) return
+  switching.value = true
+  try { if (await confirmDiscardLocal()) await fetchArticle(version) }
+  finally { switching.value = false }
+}
+async function refreshArticle() { await switchWorkspace() }
+async function selectVersion(event) {
+  const version = Number(event.target.value)
+  event.target.value = expectedVersion.value
+  await switchWorkspace(version)
+}
+async function moreVersions() {
+  const seq = loadSequence
+  const result = await getArticleVersions(articleId.value, historyPage.value + 1)
+  if (seq !== loadSequence) return
+  versions.value.push(...result.data); historyPage.value++
+}
+async function compareVersions() {
+  if (expectedVersion.value <= 1) return
+  const seq = loadSequence
+  try {
+    const result = await getVersionDiff(articleId.value, expectedVersion.value - 1, expectedVersion.value)
+    if (seq === loadSequence) historyDiff.value = result.data
+  } catch { /* API 层显示错误，保留编辑内容。 */ }
+}
+async function applied(result) {
+  if (result.article_id !== Number(articleId.value)) return
+  ElMessage.success(`已保存工作版本 V${result.new_version_no}，未自动发布`)
+  await fetchArticle(result.new_version_no)
+}
+async function checkCurrentVersion() {
+  const id = articleId.value
+  const seq = loadSequence
+  try { const result = await getOwnedArticle(id); if (id === articleId.value && seq === loadSequence) currentArticle.value = result.data } catch { /* 保留冲突状态。 */ }
+}
+function setAssistantBusy(value) {
+  assistantBusy.value = value
+  if (value) loadSequence++
+}
+async function lifecycle(action) {
+  if (formLocked.value || dirty.value || !currentArticle.value) return
+  const target = { id: articleId.value, version: expectedVersion.value }
+  submitting.value = true
+  loadSequence++
+  try {
+    await ElMessageBox.confirm(action === 'publish' ? `公开工作版本 V${expectedVersion.value}？` : '归档后文章不再公开，且不能继续编辑。', action === 'publish' ? '确认发布' : '确认归档', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' })
+    if (articleId.value !== target.id || expectedVersion.value !== target.version || dirty.value) return
+    if (action === 'publish') await publishArticle(target.id, target.version)
+    else await archiveArticle(target.id)
+    await fetchArticle()
+  } catch { /* 取消或业务错误均不自动重试。 */ } finally { submitting.value = false }
 }
 
 // 获取所有标签
@@ -68,6 +157,7 @@ async function fetchTags() {
 
 // 上传封面图片
 async function handleCoverUpload(event) {
+  if (formLocked.value) return
   const file = event.target.files[0]
   if (!file) return
 
@@ -106,7 +196,8 @@ function removeCover() {
 }
 
 // 提交文章
-async function handleSubmit() {
+async function handleSubmit(draft = false) {
+  if (formLocked.value || uploading.value) return
   if (!form.value.title.trim()) {
     ElMessage.warning('请输入文章标题')
     return
@@ -123,25 +214,33 @@ async function handleSubmit() {
   }
 
   submitting.value = true
+  loadSequence++
   try {
     if (isEdit.value) {
-      const res = await updateArticle(articleId.value, {
+      await (draft ? saveDraft : updateArticle)(articleId.value, {
         ...form.value,
         expected_version: expectedVersion.value
       })
-      expectedVersion.value = res.data.version
-      ElMessage.success('更新成功')
+      ElMessage.success(draft ? '草稿已保存，未发布' : '更新成功')
     } else {
-      const res = await createArticle(form.value)
-      ElMessage.success('发布成功')
+      const res = await (draft ? createDraft : createArticle)(form.value)
+      baseline.value = JSON.stringify(form.value)
+      ElMessage.success(draft ? '草稿已保存' : '发布成功')
+      if (draft) {
+        savedDestination = `/article/edit/${res.data.id}`
+        await router.replace(savedDestination)
+        return
+      }
       router.push(`/article/${res.data.id}`)
       return
     }
-    router.push(`/article/${articleId.value}`)
+    if (draft) await fetchArticle()
+    else { baseline.value = JSON.stringify(form.value); router.push(`/article/${articleId.value}`) }
   } catch (error) {
     console.error('提交失败:', error)
   } finally {
     submitting.value = false
+    savedDestination = null
   }
 }
 
@@ -150,10 +249,19 @@ function handleCancel() {
   router.back()
 }
 
-onMounted(() => {
-  fetchArticle()
-  fetchTags()
-})
+watch(articleId, () => {
+  loadSequence++
+  loading.value = false; loadError.value = ''
+  expectedVersion.value = null; currentArticle.value = null; versions.value = []; historyDiff.value = null; baseline.value = ''
+  if (isEdit.value) fetchArticle()
+  else {
+    form.value = { title: '', content: '', summary: '', cover_image: '', tag_ids: [] }
+    baseline.value = JSON.stringify(form.value)
+  }
+}, { immediate: true })
+onBeforeRouteLeave(async () => !assistantBusy.value && !submitting.value && !uploadPending.value && !switching.value && await confirmDiscardLocal())
+onBeforeRouteUpdate(async (to, from) => to.path === savedDestination || to.params.id === from.params.id || (!assistantBusy.value && !submitting.value && !uploadPending.value && !switching.value && await confirmDiscardLocal()))
+onMounted(fetchTags)
 </script>
 
 <template>
@@ -162,7 +270,18 @@ onMounted(() => {
       <h1 class="page-title">{{ isEdit ? '编辑文章' : '写文章' }}</h1>
     </div>
 
-    <div class="edit-form card">
+    <p v-if="loadError" role="alert">{{ loadError }} <el-button @click="refreshArticle">重新加载</el-button></p>
+    <div v-if="currentArticle" class="version-bar card">
+      <span data-testid="article-version">当前工作版本 V{{ currentArticle.version }} · 公开版本 {{ currentArticle.published_version ? `V${currentArticle.published_version}` : '无' }} · {{ currentArticle.status }}</span>
+      <label>活动版本 <select aria-label="活动版本" :value="expectedVersion" :disabled="workspaceBusy" @change="selectVersion"><option v-for="version in versionOptions" :key="version" :value="version">V{{ version }}</option></select></label>
+      <el-button v-if="versions.length < historyTotal" @click="moreVersions">加载更早版本</el-button>
+      <el-button :disabled="expectedVersion <= 1 || loading || assistantBusy" @click="compareVersions">与上一版比较</el-button>
+      <el-button :disabled="workspaceBusy" @click="refreshArticle">刷新工作版本</el-button>
+      <p v-if="readOnlyVersion">正在查看历史版本，编辑只在最新工作版本中进行。</p>
+      <ArticleDiff v-if="historyDiff" :diff="historyDiff" />
+    </div>
+    <div class="workspace-layout">
+    <fieldset :disabled="formLocked" class="edit-form card">
       <el-form :model="form" label-position="top">
         <!-- 文章标题 -->
         <el-form-item label="文章标题" required>
@@ -239,23 +358,29 @@ onMounted(() => {
 
         <!-- 文章内容 -->
         <el-form-item label="文章内容" required>
-          <RichTextEditor v-model="form.content" />
+          <RichTextEditor v-model="form.content" :disabled="!!formLocked" @uploading="editorUploading = $event" />
         </el-form-item>
 
         <!-- 提交按钮 -->
         <el-form-item>
           <div class="form-actions">
             <el-button @click="handleCancel">取消</el-button>
+            <el-button :disabled="!!formLocked" :loading="submitting" @click="handleSubmit(true)">保存草稿</el-button>
+            <el-button v-if="isEdit" :disabled="!!formLocked || dirty" @click="lifecycle('publish')">发布工作版本</el-button>
+            <el-button v-if="isEdit" :disabled="!!formLocked || dirty" @click="lifecycle('archive')">归档文章</el-button>
             <el-button
               type="primary"
               :loading="submitting"
-              @click="handleSubmit"
+              :disabled="!!formLocked"
+              @click="handleSubmit(false)"
             >
-              {{ isEdit ? '保存修改' : '发布文章' }}
+              {{ isEdit ? '保存并发布' : '发布文章' }}
             </el-button>
           </div>
         </el-form-item>
       </el-form>
+    </fieldset>
+    <AgentAssistantPanel :workspace="workspace" :current-version="currentArticle?.version" :dirty="dirty" :disabled="loading || submitting || switching || uploadPending || !!loadError || currentArticle?.status === 'archived'" @busy="setAssistantBusy" @applied="applied" @refresh="refreshArticle" @conflict="checkCurrentVersion" />
     </div>
   </div>
 </template>
@@ -264,8 +389,13 @@ onMounted(() => {
 .article-edit-page {
   padding-top: 20px;
   padding-bottom: 40px;
-  max-width: 800px;
+  max-width: 1440px;
 }
+.workspace-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: 24px; }
+.edit-form { min-width: 0; border: 0; margin: 0; }
+.version-bar { padding: 16px; margin-bottom: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; }
+.version-bar .article-diff { flex-basis: 100%; }
+@media (max-width: 1000px) { .workspace-layout { grid-template-columns: minmax(0, 1fr); } }
 
 .edit-form {
   :deep(.el-form-item__label) {
@@ -362,6 +492,7 @@ onMounted(() => {
 // ── 表单操作 ───────────────────────────────────────────
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
 }

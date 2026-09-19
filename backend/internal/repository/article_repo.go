@@ -234,6 +234,21 @@ func (r *ArticleRepository) FindOwnedByID(userID, articleID uint) (*model.Articl
 	return findOwnedArticle(database.DB.Preload("User").Preload("Tags"), userID, articleID)
 }
 
+// ListOwnedVersions 只返回所有者文章的历史版本摘要，不增加浏览量。
+func (r *ArticleRepository) ListOwnedVersions(userID, articleID uint, page, limit int) ([]model.ArticleVersion, int64, error) {
+	if _, err := findOwnedArticle(database.DB, userID, articleID); err != nil {
+		return nil, 0, err
+	}
+	query := database.DB.Model(&model.ArticleVersion{}).Where("article_id = ?", articleID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var versions []model.ArticleVersion
+	err := query.Select("article_id", "version_no", "title", "created_at").Order("version_no DESC").Offset((page - 1) * limit).Limit(limit).Find(&versions).Error
+	return versions, total, err
+}
+
 // FindOwnedVersion 先校验文章归属，再读取指定快照，不增加浏览量。
 func (r *ArticleRepository) FindOwnedVersion(userID, articleID, versionNo uint) (*model.ArticleVersion, error) {
 	if _, err := findOwnedArticle(database.DB, userID, articleID); err != nil {

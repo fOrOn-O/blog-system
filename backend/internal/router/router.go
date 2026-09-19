@@ -86,6 +86,7 @@ func SetupRouter() *gin.Engine {
 			protected.POST("/articles/:id/archive", articleHandler.ArchiveArticle)
 			protected.GET("/user/articles", articleHandler.ListMyArticles)
 			protected.GET("/user/articles/:id", articleHandler.GetOwnedArticle)
+			protected.GET("/user/articles/:id/versions", articleHandler.ListOwnedVersions)
 			protected.PUT("/articles/:id", articleHandler.Update)
 			protected.DELETE("/articles/:id", articleHandler.Delete)
 

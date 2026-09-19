@@ -174,22 +174,25 @@ import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import { uploadImage } from '@/api/upload'
+import { sanitizeArticleHTML } from '@/utils/article-html'
 
 const props = defineProps({
+  disabled: { type: Boolean, default: false },
   modelValue: {
     type: String,
     default: ''
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'uploading'])
 
 const imageInput = ref(null)
 const uploading = ref(false)
 const imageInsertPosition = ref(null)
 
 const editor = useEditor({
-  content: props.modelValue || '',
+  content: sanitizeArticleHTML(props.modelValue),
+  editable: !props.disabled,
   extensions: [
     StarterKit.configure({
       heading: {
@@ -227,12 +230,15 @@ watch(
   (value) => {
     if (!editor.value) return
 
-    const nextContent = value || ''
+    const nextContent = sanitizeArticleHTML(value)
     if (editor.value.getHTML() !== nextContent) {
       editor.value.commands.setContent(nextContent, { emitUpdate: false })
     }
   }
 )
+
+// 切换只读状态不代表用户改稿，不能触发 update 把加载/批准流程误判为本地编辑。
+watch(() => props.disabled, value => editor.value?.setEditable(!value, false))
 
 const setLink = () => {
   if (!editor.value) return
@@ -252,7 +258,7 @@ const setLink = () => {
 }
 
 const selectImage = () => {
-  if (!editor.value || uploading.value) return
+  if (!editor.value || uploading.value || props.disabled) return
 
   imageInsertPosition.value = editor.value.state.selection.from
   imageInput.value?.click()
@@ -261,7 +267,7 @@ const selectImage = () => {
 const handleImageUpload = async (event) => {
   const file = event.target.files?.[0]
   event.target.value = ''
-  if (!file || !editor.value) return
+  if (!file || !editor.value || uploading.value || props.disabled) return
 
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
   if (!allowedTypes.includes(file.type)) {
@@ -275,6 +281,7 @@ const handleImageUpload = async (event) => {
   }
 
   uploading.value = true
+  emit('uploading', true)
   try {
     const response = await uploadImage(file)
     const data = response.data || response
@@ -299,6 +306,7 @@ const handleImageUpload = async (event) => {
     }
   } finally {
     uploading.value = false
+    emit('uploading', false)
     imageInsertPosition.value = null
   }
 }

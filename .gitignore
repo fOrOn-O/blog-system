@@ -39,6 +39,7 @@ blog.db
 tmp/
 vendor/
 lark-work/
+output/playwright/
 
 # Environment
 .env

@@ -10,7 +10,7 @@ import {
 } from '@/api/article'
 import { normalizeCommentsResponse } from '@/utils/comments'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import DOMPurify from 'dompurify'
+import { sanitizeArticleHTML } from '@/utils/article-html'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,10 +29,7 @@ const isAuthor = computed(() => authStore.currentUser?.id === article.value?.use
 const isAdmin = computed(() => authStore.currentUser?.role === 'admin')
 const canDeleteArticle = computed(() => isAuthor.value || isAdmin.value)
 const articleId = computed(() => route.params.id)
-const sanitizedArticleContent = computed(() => DOMPurify.sanitize(
-  article.value?.content || '',
-  { USE_PROFILES: { html: true } }
-))
+const sanitizedArticleContent = computed(() => sanitizeArticleHTML(article.value?.content))
 
 function formatDate(dateStr) {
   if (!dateStr) return ''

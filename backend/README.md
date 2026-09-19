@@ -514,3 +514,13 @@ Task 10 的索引保持独立显式操作。LangGraph 的模型绑定和 ToolNod
 回滚分别在 `BEFORE UPDATE articles` 和 `AFTER INSERT article_versions` 注入失败，检查文章、
 版本、公开指针、时间戳和标签全部恢复，移除触发器后重试连续生成下一版。
 SQLite 测试不等同于 MySQL 并发集成测试；MySQL 行锁继续沿用既有实现。
+# Task 13：前端版本列表接线
+
+新增 `GET /api/v1/user/articles/:id/versions?page=1&limit=20`，继承 JWT/当前所有者校验，
+返回分页元数据及 `{article_id, version_no, title, created_at}` 列表，按版本号降序。
+不返回全文，不增加浏览量或写入业务状态。前端选择历史快照仍复用 Task 11 单版本 GET，
+历史比较复用 Task 08 Diff，批准仍复用 Task 12 Preview/Apply；版本和生命周期写逻辑不变。
+
+浏览器 E2E fixture 为 `TestTask13E2EServer`，仅在 `TASK13_E2E=1` 时启动，
+使用测试内存 SQLite/测试身份并绑定 127.0.0.1:18080。普通 `go test ./...` 跳过服务器 fixture，
+正常运行新增的版本列表权限、分页及只读测试。此 fixture 不读取应用数据库配置，也不用于部署。

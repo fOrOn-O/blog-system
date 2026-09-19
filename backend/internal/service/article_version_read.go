@@ -1,6 +1,28 @@
 package service
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
+
+type ArticleVersionSummary struct {
+	ArticleID uint      `json:"article_id"`
+	VersionNo uint      `json:"version_no"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *ArticleService) ListOwnedVersions(userID, articleID uint, page, limit int) ([]ArticleVersionSummary, int64, error) {
+	versions, total, err := s.articleRepo.ListOwnedVersions(userID, articleID, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	result := make([]ArticleVersionSummary, 0, len(versions))
+	for _, v := range versions {
+		result = append(result, ArticleVersionSummary{v.ArticleID, v.VersionNo, v.Title, v.CreatedAt})
+	}
+	return result, total, nil
+}
 
 var ErrInvalidArticleVersion = errors.New("文章 ID 和版本号必须为正整数")
 

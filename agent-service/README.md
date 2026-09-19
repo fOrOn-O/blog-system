@@ -481,3 +481,21 @@ read_workspace_article、submit_article_edit_proposal，不能调用保存、应
 没有提案持久化、批准状态或自动重试/合并；拒绝只需丢弃提案。
 Go 当前的共同正文规则仅检查非空，未解决完整 HTML 安全清洗。
 Task 13 的预览渲染和批准交互必须把 HTML 视为不可信内容。
+# Task 13：工作区聊天 HTTP 入口
+
+`POST /api/v1/agent/chat` 接受用户 Bearer JWT 和：
+
+```json
+{"message":"改写介绍段","workspace":{"article_id":23,"version_no":7}}
+```
+
+返回 Task 11 的 `{"answer":"...","proposal":null}` 或完整结构化 proposal。
+请求不接受 user_id、token 或额外 workspace 身份字段。入口先通过 BlogClient 向 Go 验证
+指定历史版本的所有权和存在性，再创建/复用 Runner，将工作区和请求 JWT 注入运行上下文。
+Go 的 401/403/404 保持对应状态，模型/上游失败返回脱敏 502；消息为空或结构非法返回 422。
+同一图提供问答、显式指定历史版本的 RAG 和写作提案，没有第二个聊天系统。
+Runner/模型按进程延迟复用；每次请求仍是独立运行，无 checkpoint、对话持久化或记忆。
+
+此接口只能调用 `run_with_response()` 白名单。Preview/Apply 由前端直接请求 Task 12 Go 应用接口，
+没有新增 Apply 工具或 Python 业务数据库写入。使用同源前端反向代理接入，部署说明见 frontend README。
+浏览器 E2E 的 tests/e2e_app.py 仅用于测试：替换 LLM，配置独立本地 Go fixture，不加载 `.env` 密钥。
