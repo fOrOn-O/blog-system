@@ -1,6 +1,10 @@
 package service
 
-import "errors"
+import (
+	"errors"
+
+	"blog-system/internal/model"
+)
 
 var ErrInvalidDiffVersions = errors.New("必须满足 0 < from_version < to_version")
 
@@ -51,6 +55,11 @@ func (s *ArticleService) GetVersionDiff(userID, articleID, from, to uint) (*Arti
 	if err != nil {
 		return nil, err
 	}
+	return compareArticleVersions(before, after)
+}
+
+// 历史版本比较与提案预览共用同一个归一化、字段比较和块对齐入口。
+func compareArticleVersions(before, after *model.ArticleVersion) (*ArticleVersionDiff, error) {
 	a, err := normalizeArticleHTML(before.Content)
 	if err != nil {
 		return nil, err
@@ -62,7 +71,7 @@ func (s *ArticleService) GetVersionDiff(userID, articleID, from, to uint) (*Arti
 	field := func(a, b string) TextFieldChange { return TextFieldChange{a != b, a, b} }
 	changes := compareContentBlocks(a, b)
 	return &ArticleVersionDiff{
-		ArticleID: articleID, FromVersion: from, ToVersion: to,
+		ArticleID: before.ArticleID, FromVersion: before.VersionNo, ToVersion: after.VersionNo,
 		FieldChanges: ArticleFieldChanges{
 			Title: field(before.Title, after.Title), Summary: field(before.Summary, after.Summary),
 			CoverImage: field(before.CoverImage, after.CoverImage),

@@ -70,41 +70,46 @@ func (r *ArticleRepository) updateContent(article *model.Article, tags []model.T
 		if err := checkExpectedVersion(current, expectedVersion); err != nil {
 			return err
 		}
-		contentChanged := current.Title != article.Title ||
-			current.Content != article.Content ||
-			current.Summary != article.Summary ||
-			current.CoverImage != article.CoverImage
-		article.Version = current.Version
-		article.Status = current.Status
-		article.PublishedVersion = current.PublishedVersion
-		if contentChanged {
-			article.Version++
-		}
-		if publish {
-			if !contentChanged {
-				if err := requireArticleSnapshot(tx, article.ID, article.Version); err != nil {
-					return err
-				}
-			}
-			article.Status = model.ArticleStatusPublished
-			article.PublishedVersion = article.Version
-		}
+		return saveArticleContent(tx, current, article, tags, replaceTags, createdBy, publish)
+	})
+}
 
-		if err := tx.Omit("Tags", "User").Save(article).Error; err != nil {
-			return err
-		}
-
-		if replaceTags {
-			if err := tx.Model(article).Association("Tags").Replace(tags); err != nil {
+// 两种入口在各自事务内完成校验后，共用内容更新、版本递增和快照写入。
+func saveArticleContent(tx *gorm.DB, current, article *model.Article, tags []model.Tag, replaceTags bool, createdBy uint, publish bool) error {
+	contentChanged := current.Title != article.Title ||
+		current.Content != article.Content ||
+		current.Summary != article.Summary ||
+		current.CoverImage != article.CoverImage
+	article.Version = current.Version
+	article.Status = current.Status
+	article.PublishedVersion = current.PublishedVersion
+	if contentChanged {
+		article.Version++
+	}
+	if publish {
+		if !contentChanged {
+			if err := requireArticleSnapshot(tx, article.ID, article.Version); err != nil {
 				return err
 			}
 		}
+		article.Status = model.ArticleStatusPublished
+		article.PublishedVersion = article.Version
+	}
 
-		if contentChanged {
-			return tx.Create(newArticleVersion(article, createdBy)).Error
+	if err := tx.Omit("Tags", "User").Save(article).Error; err != nil {
+		return err
+	}
+
+	if replaceTags {
+		if err := tx.Model(article).Association("Tags").Replace(tags); err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+
+	if contentChanged {
+		return tx.Create(newArticleVersion(article, createdBy)).Error
+	}
+	return nil
 }
 
 func newArticleVersion(article *model.Article, createdBy uint) *model.ArticleVersion {

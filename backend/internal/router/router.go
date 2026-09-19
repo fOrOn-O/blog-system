@@ -80,6 +80,8 @@ func SetupRouter() *gin.Engine {
 			protected.POST("/articles", articleHandler.Create)
 			protected.POST("/articles/drafts", articleHandler.CreateDraft)
 			protected.PUT("/articles/:id/draft", articleHandler.UpdateDraft)
+			protected.POST("/articles/:id/edit-proposal/preview", articleHandler.PreviewArticleEdit)
+			protected.POST("/articles/:id/edit-proposal/apply", articleHandler.ApplyArticleEdit)
 			protected.POST("/articles/:id/publish", articleHandler.PublishArticle)
 			protected.POST("/articles/:id/archive", articleHandler.ArchiveArticle)
 			protected.GET("/user/articles", articleHandler.ListMyArticles)

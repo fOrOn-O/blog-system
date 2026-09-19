@@ -461,3 +461,23 @@ StateGraph 的节点、边和 MessagesState 不变，没有写作工具中的第
 测试使用 Fake Model、MockTransport 和 Go SQLite 内存库，不需要真实 Groq、下载 embedding 权重或启动 Qdrant。
 Python 测试验证提案链路仅发 GET，所有 BlogClient 写方法均未调用，并验证非法写工具不能执行；
 Go 测试对照重复读取前后的 Article 与全部 ArticleVersion，确认内容、版本、PublishedVersion、标签、计数及缓存不变。
+
+## Task 12：应用侧人工批准边界
+
+Task 11 的 `AgentResponse.proposal` 仍为短期应用数据。应用可将其中的文章 ID 放入路由，
+仅取 `base_version_no`、`proposed_content`，携带当前用户 JWT 直接调用 Go：
+
+- `POST /api/v1/articles/:id/edit-proposal/preview`：使用基础历史快照和 Task 08 的结构化 diff 预览。
+- `POST /api/v1/articles/:id/edit-proposal/apply`：用户明确批准后保存下一工作版本。
+
+接口及错误语义见 [Go Task 12 说明](../backend/README.md#task-12人工批准与安全应用)。
+本阶段没有 FastAPI 转发接口，也没有 BlogClient Apply 方法或 LangGraph Apply 工具。
+`run_with_response()` 的 model.bind_tools 和 ToolNode 仍只注册 get/list/diff/search、
+read_workspace_article、submit_article_edit_proposal，不能调用保存、应用、发布、归档或索引。
+旧 `run()` 保持兼容，未来编辑 UI 应使用 `run_with_response()`。
+
+应用时 Go 重新认证、检查所有权及当前版本，拒绝过期提案；不信任 Task 11 已通过的权限检查。
+成功只生成未发布工作版本，PublishedVersion 保持不变，不触发 embedding/Qdrant。
+没有提案持久化、批准状态或自动重试/合并；拒绝只需丢弃提案。
+Go 当前的共同正文规则仅检查非空，未解决完整 HTML 安全清洗。
+Task 13 的预览渲染和批准交互必须把 HTML 视为不可信内容。

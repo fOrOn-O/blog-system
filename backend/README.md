@@ -408,4 +408,109 @@ Python 只能通过此 API 获得分块；本接口不自动建立或更新任�
 401 表示身份无效；非所有者（包括其他管理员）返回 403；文章/版本不存在或文章已删除返回 404；
 非正整数或超出范围的 ID/版本返回 400。未增加提案写接口或数据表。
 此读取不修改正文、Article.Version、PublishedVersion、标签、计数或版本快照，也不增加浏览量或失效缓存。
-Python 在读取原文和提交运行内提案时均调用此 GET；提案只存在于 Python 的本次运行结果中，尚不能应用或发布。
+Python 在读取原文和提交运行内提案时均调用此 GET；提案只存在于 Python 的本次运行结果中。
+Task 12 的应用操作见下文，Agent 工具本身仍不能应用或发布提案。
+
+## Task 12：人工批准与安全应用
+
+应用直接调用 Go 的认证接口，无需经由 LangGraph 或启动 Python/RAG 服务：
+
+| 操作 | 路由 |
+| --- | --- |
+| 预览 | `POST /api/v1/articles/:id/edit-proposal/preview` |
+| 显式批准并应用 | `POST /api/v1/articles/:id/edit-proposal/apply` |
+
+两者均要求 `Authorization: Bearer <用户 JWT>`，请求体仅允许：
+
+```json
+{
+  "base_version_no": 7,
+  "proposed_content": "<h1>Redis</h1><p>经人工审核的完整正文。</p>"
+}
+```
+
+文章 ID 来自路由，身份来自 JWT。拒绝未知字段，包括 `user_id`、`owner_id`、`article_id`、
+`new_version_no`、`published_version`、`status`、`tag_ids`、`approved`、`change_summary`。
+从 Task 11 提案构建请求时只选取上述两个字段；提案摘要用于展示，不是业务授权依据。
+明确调用 Apply 即表示批准这份请求中的正文；预览本身不批准、不签发凭据，也不是 Apply 的服务端前置状态。
+拒绝提案只需丢弃客户端数据。没有 proposal 表、ID、审批历史或审批状态。
+
+预览先通过 Go 校验文章所有权，再加载指定历史快照，复用 Task 08 的
+`compareArticleVersions → normalizeArticleHTML → compareContentBlocks`。
+成功响应沿用 `{code, message, data}`，其中预览的 `data` 为：
+
+```json
+{
+  "article_id": 23,
+  "base_version_no": 7,
+  "field_changes": {
+    "title": {"changed": false, "before": "Redis", "after": "Redis"},
+    "summary": {"changed": false, "before": "", "after": ""},
+    "cover_image": {"changed": false, "before": "", "after": ""}
+  },
+  "content": {
+    "changed": true,
+    "changes": [{
+      "operation": "modify", "before_index": 1, "after_index": 1,
+      "before": {"type": "paragraph", "text": "原正文。"},
+      "after": {"type": "paragraph", "text": "经人工审核的完整正文。"}
+    }]
+  }
+}
+```
+
+`field_changes`、`content` 与 Task 08 的 DTO 完全相同。提案不是已存在的版本，因此元数据使用
+`base_version_no`，不虚构 `to_version`；原有历史版本 diff API 的响应不变。
+预览只比较正文，标题/摘要/封面保持基础快照值，状态和标签不参加 diff。
+允许预览旧版本，但应用时旧版本必须返回冲突，不能自动合并或变基。
+
+Apply 的 Repository 事务先重新锁定当前文章、校验所有者，然后调用 Task 03 的
+`checkExpectedVersion`，要求 `Article.Version == base_version_no`，检查归档状态及基础快照存在，
+执行共同正文校验和无变化检查，再仅替换事务中读取的当前正文。
+复用人工编辑的 `saveArticleContent`：保存 Article、递增 Version、写入完整 ArticleVersion，
+同一个 `tx` 提交或回滚。不更新标签；保留 Title/Summary/CoverImage、Article.Status 和 PublishedVersion。
+快照 `CreatedBy` 为批准用户，`Source=user`。缓存只在成功提交后失效。
+
+Apply 成功的 `data` 示例：
+
+```json
+{
+  "article_id": 23,
+  "previous_version_no": 7,
+  "new_version_no": 8,
+  "status": "draft",
+  "published_version": 6
+}
+```
+
+这里 `status=draft` 表示此次操作保存了未发布的工作版本，不是覆盖文章生命周期。
+原本已发布的文章仍为 `Article.Status=published`，公开读取继续使用 V6；新 V8 不会自动公开。
+原本草稿仍为草稿；已归档文章拒绝编辑。响应版本来自此次事务结果，不在提交后重新查询。
+
+| 情况 | HTTP / message |
+| --- | --- |
+| 缺少或无效 JWT | 401，沿用认证中间件 |
+| 非所有者（包括其他管理员） | 403 |
+| 文章不存在、已删除、基础快照缺失 | 404 |
+| 基础版本与当前版本不同 | 409，沿用 Task 03 版本冲突信息；优先于无变化检查 |
+| 文章已归档 | 409 |
+| 非法请求 / 空正文 | 400 |
+| 正文完全相同 | 400，`文章正文没有实际变化` |
+| 数据库等内部失败 | 500，固定错误信息，不返回数据库细节 |
+
+无变化检查按原有写入规则比较原始正文字节，不改变 HTML。
+Task 08 的结构化预览忽略部分格式差异，因此格式修改可能预览无块差异但 Apply 仍生成内容版本。
+人工写入与 Apply 共用 `ValidateArticleContent` 的非空规则；这不是 HTML sanitizer。
+现有 Go 写入没有完整 XSS/URL/CSS 安全清洗，Task 11 的基础校验也不能作为可信安全保证。
+生成及预览 HTML 仍是不可信输入；Task 13 展示时需要安全渲染与明确批准交互，生产使用前应单独完善统一 HTML 安全策略。
+本任务不新增独立 sanitizer，也不声称任意 HTML 已安全。
+
+Apply 不调用 Python、LLM、embedding、Qdrant 或 IndexArticleVersion。
+Task 10 的索引保持独立显式操作。LangGraph 的模型绑定和 ToolNode 均未增加 Apply 能力；
+未来编辑 UI 必须使用 Task 11 的 `run_with_response()`，不要用带旧草稿写工具的兼容 `run()` 替代。
+
+测试覆盖历史基准预览、与 Task 08 diff 对照、所有权及 JWT、严格请求字段、重放冲突、
+草稿/已发布/归档行为、无变化及空正文、缓存和历史快照不变，以及真实 SQLite 触发器回滚。
+回滚分别在 `BEFORE UPDATE articles` 和 `AFTER INSERT article_versions` 注入失败，检查文章、
+版本、公开指针、时间戳和标签全部恢复，移除触发器后重试连续生成下一版。
+SQLite 测试不等同于 MySQL 并发集成测试；MySQL 行锁继续沿用既有实现。

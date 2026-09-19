@@ -90,6 +90,9 @@ func (s *ArticleService) CreateDraft(userID uint, req CreateDraftRequest) (*Arti
 }
 
 func (s *ArticleService) createArticle(userID uint, req CreateDraftRequest, status string) (*ArticleResponse, error) {
+	if err := model.ValidateArticleContent(req.Content); err != nil {
+		return nil, err
+	}
 	tags, err := s.resolveTags(req.TagIDs)
 	if err != nil {
 		return nil, err
@@ -250,6 +253,9 @@ func (s *ArticleService) updateArticle(userID, articleID uint, req UpdateDraftRe
 		article.Title = *req.Title
 	}
 	if req.Content != nil {
+		if err := model.ValidateArticleContent(*req.Content); err != nil {
+			return nil, err
+		}
 		article.Content = *req.Content
 	}
 	if req.Summary != nil {

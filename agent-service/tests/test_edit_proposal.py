@@ -153,8 +153,20 @@ async def test_submit_requires_canonical_result_from_a_previous_model_turn(setti
 
 
 @pytest.mark.anyio
-async def test_proposal_run_cannot_execute_mutations_even_when_model_requests_them(settings):
-    names = ["create_draft", "update_draft", "publish_article", "archive_article", "index_article_version"]
+async def test_proposal_run_cannot_execute_mutations_even_when_model_requests_them(settings, monkeypatch):
+    from app.agent import graph as graph_module
+
+    nodes = []
+    original_tool_node = graph_module.ToolNode
+
+    def capture_tool_node(*args, **kwargs):
+        node = original_tool_node(*args, **kwargs)
+        nodes.append(node)
+        return node
+
+    monkeypatch.setattr(graph_module, "ToolNode", capture_tool_node)
+    names = ["create_draft", "update_draft", "publish_article", "archive_article", "index_article_version",
+             "apply_article_edit", "apply_article_edit_proposal", "save_article", "create_version"]
     model = ScriptedModel([
         AIMessage(content="", tool_calls=[{"name": name, "args": {"article_id": 23}, "id": name} for name in names]),
         AIMessage(content="此入口只生成提案"),
@@ -163,14 +175,22 @@ async def test_proposal_run_cannot_execute_mutations_even_when_model_requests_th
     def handler(request):
         pytest.fail("A forbidden tool reached Go")
 
+    runner = AgentRunner(model, settings=settings)
+    # 构造时保留旧兼容入口的图；这里只审计随后创建并实际执行的提案图。
+    nodes.clear()
     async with BlogClient(settings, transport=httpx.MockTransport(handler)) as blog:
-        result = await AgentRunner(model, settings=settings).run_with_response(
+        result = await runner.run_with_response(
             "保存并发布", access_token="fake-token", workspace=AgentWorkspace(article_id=23, version_no=7), blog_client=blog,
         )
     assert result.proposal is None
     replies = [m for m in model.inputs[1] if isinstance(m, ToolMessage)]
     assert len(replies) == len(names) and all(m.status == "error" for m in replies)
     assert not set(names) & {t.name for t in model.bound_tools}
+    # 检查实际模型绑定与执行注册表，避免只验证白名单常量而漏掉构图时新增的能力。
+    expected = {"get_article", "list_my_articles", "get_version_diff", "search_article_version",
+                "read_workspace_article", "submit_article_edit_proposal"}
+    assert {t.name for t in model.bound_tools} == expected
+    assert len(nodes) == 1 and set(nodes[0].tools_by_name) == expected
 
 
 class EditingModel(ScriptedModel):
