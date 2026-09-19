@@ -1,6 +1,6 @@
 # Blog Agent Service
 
-FastAPI 服务提供进程健康检查、集中配置、异步 BlogClient 和最小 LangGraph Single Agent。
+FastAPI 服务提供进程健康检查、集中配置、异步 BlogClient、LangGraph Single Agent 和版本内 Dense RAG。
 BlogClient 通过 HTTP 调用 Go Agent API，由 Go 执行认证授权、业务规则和数据库事务。
 本服务不连接博客数据库，也不依赖 Go Backend 在线才能启动。
 
@@ -14,14 +14,16 @@ BlogClient 通过 HTTP 调用 Go Agent API，由 Go 执行认证授权、业务�
 
 ```powershell
 cd agent-service
-uv export --locked --format requirements-txt --no-hashes |
+uv export --locked --extra local --format requirements-txt --no-hashes |
     uv pip install --python 'D:\Anaconda\python.exe' --requirements -
 ```
 
 使用安装而非同步清理，保留 Conda 环境中的无关包。其他环境可替换解释器路径，
-或使用 `uv sync --locked` 创建项目 `.venv`。
+或使用 `uv sync --locked --extra local` 创建项目 `.venv`。
 FastAPI、Uvicorn、pydantic-settings、Pydantic 和 httpx 是运行依赖；pytest 用于测试。
 Agent 使用 langgraph、langchain-core 和 langchain-groq。
+Qdrant Client 是运行依赖；sentence-transformers 属于可选的 `local` extra，
+只在本地 E5 环境安装。远程 embedding 环境可省略 `--extra local`，不因此安装 PyTorch 和模型运行库。
 Hatchling 仅用于构建 Python 包。依赖版本记录在 `uv.lock` 中。
 锁文件中的 packaging 和 tenacity 保持与本机已有 Streamlit 的版本约束兼容。
 
@@ -102,6 +104,7 @@ Client 不自动跟随重定向、不重试请求、不记录 Header 或 Token�
 | `get_article(article_id, *, access_token)` | `Article` | `GET /articles/:id` |
 | `list_my_articles(*, access_token, page=1, limit=10, status=None)` | `ArticlePage` | `GET /articles` |
 | `get_version_diff(article_id, from_version, to_version, *, access_token)` | `ArticleVersionDiff` | `GET /articles/:id/diff?from_version=...&to_version=...` |
+| `get_version_chunks(article_id, version_no, *, access_token)` | `ArticleVersionChunks` | `GET /articles/:id/versions/:version/chunks` |
 | `create_draft(draft: CreateDraftInput, *, access_token)` | `Article` | `POST /articles` |
 | `update_draft(article_id, draft: UpdateDraftInput, *, access_token)` | `Article` | `PUT /articles/:id/draft` |
 | `publish_article(article_id, *, expected_version, access_token)` | `Article` | `POST /articles/:id/publish` |
@@ -150,21 +153,23 @@ START → call_model → 有 tool_calls → tools（ToolNode）→ call_model
 ```
 
 State 只有 `MessagesState.messages`。每次运行从新的 HumanMessage 开始，
-没有跨运行的对话记忆、Checkpointer、HITL、RAG 或流式接口。
-`AgentContext` 仅携带当前 run 的 JWT 和 BlogClient；ToolRuntime 在执行工具时注入它，
+没有跨运行的对话记忆、Checkpointer、HITL 或流式接口。
+`AgentContext` 携带当前 run 的 JWT、BlogClient 和可选 RAG 服务；ToolRuntime 在执行工具时注入它，
 JWT 不写入消息、普通 State、Prompt 或模型工具参数，也不出现在 Context 的 repr 中。
 
-模型绑定与 ToolNode 执行使用同一份五工具白名单：
+模型绑定与 ToolNode 执行使用同一份六工具白名单：
 
 - `get_article(article_id)`：返回工作内容、Version、PublishedVersion 和标签。
 - `list_my_articles(page=1, limit=10, status=None)`：返回本人文章与分页。
 - `get_version_diff(article_id, from_version, to_version)`：只读比较本人文章的两个历史版本，要求 `0 < from_version < to_version`，支持非相邻版本。
+- `search_article_version(article_id, version_no, query)`：只读检索本人文章的指定历史版本，不自动建立索引。
 - `create_draft(title, content, summary='', cover_image='', tag_ids=None)`：只创建草稿。
 - `update_draft(article_id, expected_version, title=None, content=None, summary=None, cover_image=None, tag_ids=None)`：只更新工作版本。
 
 `publish_article` 和 `archive_article` 虽然存在于 BlogClient，但未绑定给模型，
 也未注册到 ToolNode；模型即使编造对应调用也无法执行。
-所有工具只调用 BlogClient，Go 仍负责最终权限、状态和事务规则。
+文章工具通过 BlogClient 访问 Go；检索工具调用 RAG 服务，并先通过 BlogClient 由 Go 校验权限及版本。
+Go 仍负责最终权限、状态和事务规则。
 
 成功结果为 `{"ok": true, "data": ...}`，只选择文章内容和版本等必要字段，
 不向模型发送作者账号详情、计数或 HTTP 对象。
@@ -172,7 +177,7 @@ JWT 不写入消息、普通 State、Prompt 或模型工具参数，也不出现
 使用固定安全消息，不把异常原文或堆栈交给模型。
 错误码包括 `authentication_required`、`permission_denied`、`article_not_found`、
 `version_conflict`、`backend_unavailable`、`backend_error`、`invalid_request`、
-`invalid_arguments` 和兜底的 `tool_error`。
+`invalid_arguments`、`rag_unavailable` 和兜底的 `tool_error`。
 
 版本冲突不会触发应用级重试或自动读取新版本覆盖。网络异常不能断言写入没有完成。
 模型本身仍可能再次建议调用；当前使用短 Prompt 和 Graph 步数上限限制，
@@ -232,3 +237,140 @@ Diff 文本是数据，展示方应按纯文本转义，不将其作为 HTML 执
 缺失历史版本使用 404，因此仍映射为 `ArticleNotFoundError` 和工具的 `article_not_found`；
 既有 409 映射保持不变，Diff 本身不执行工作版本冲突检查，不更新任何业务数据。
 完整 Go API 响应示例与算法说明见 [后端 README](../backend/README.md)。
+
+## Task 10：指定文章版本的 Dense RAG
+
+```text
+显式 index → BlogClient → Go JWT / 所有权校验 → ArticleVersion → Task 09 ChunkHTML / RenderText
+          → EmbeddingProvider.embed_documents → Qdrant 按版本替换索引
+
+用户问题 → 现有 LangGraph → search_article_version → Go 再次校验所有权及版本
+         → EmbeddingProvider.embed_query → Qdrant Top-K → 校对 Go 原文
+         → RetrievedChunk → 按检索顺序组装上下文 → Tool Result → 同一个模型生成答案
+```
+
+Python 不解析 HTML，不访问博客 SQL 数据库，不改变文章、版本或发布状态。
+`get_version_chunks` 返回的 `user_id` 由 Go 从验证后的 JWT 取得，Python 不自行解析 JWT 或接收模型指定的用户 ID。
+每次检索都重新请求 Go 的该版本分块，确认文章未删除、版本存在、用户仍有所有权；
+Qdrant 命中的文本和 HeadingPath 还会与 Go 响应逐项比较，过期或不匹配内容被舍弃。
+
+### 本地配置与启动
+
+集中配置在 `app/core/config.py`；客户端和 provider 工厂在 `app/core/rag.py`。
+环境变量覆盖 `.env`，缺省值对应本地开发。切换 profile 或连接配置后必须重启进程。
+
+| 配置 | 本地默认值 | 含义 |
+| --- | --- | --- |
+| `APP_ENV` | `development` | 本地开发；Render 应显式设置 `production` |
+| `EMBEDDING_PROVIDER` | `local_e5` | 选择 provider 工厂分支，不是根据 URL 猜测 |
+| `EMBEDDING_MODEL` | `intfloat/multilingual-e5-small` | E5 多语言模型 |
+| `EMBEDDING_DIMENSION` | `384` | 本地 E5 固定向量维度 |
+| `QDRANT_DISTANCE` | `Cosine` | 本地 E5 固定距离 |
+| `QDRANT_COLLECTION` | `article_chunks_e5_v1` | 整个 embedding profile 共用的集合，不按用户或文章建集合 |
+| `QDRANT_URL` | `http://localhost:6333` | 可改为外部持久化 Qdrant / Qdrant Cloud 的 HTTPS origin |
+| `QDRANT_API_KEY` | 空 | 外部 Qdrant 密钥，SecretStr；有密钥时要求 HTTPS |
+| `QDRANT_TIMEOUT_SECONDS` | `10` | Qdrant 请求超时秒数 |
+| `EMBEDDING_DEVICE` | `cpu` | 本地推理设备 |
+| `EMBEDDING_BATCH_SIZE` | `32` | 本地文档 embedding batch size |
+| `RAG_TOP_K` | `5` | 1～50，由应用配置决定，不暴露给模型 |
+
+本地 Docker Qdrant（需要先安装并启动 Docker Desktop）：
+
+```powershell
+docker compose up -d qdrant
+```
+
+`compose.yaml` 使用 Qdrant 1.16.3，仅将 HTTP 端口绑定到 `127.0.0.1:6333`，
+索引存放在 Docker named volume `qdrant_data`；`docker compose down` 保留数据，`down -v` 会删除索引卷。
+外部 Qdrant 至少需要 1.16，因为集合 profile 使用该版本开始支持的
+[collection metadata](https://qdrant.tech/documentation/manage-data/collections/)。
+修改 `QDRANT_URL` 和密钥即可使用外部 Qdrant，无需修改索引、检索代码或挂载 Render 本地磁盘。
+
+安装前述 `local` extra 后，可选预下载并预热模型：
+
+```powershell
+& 'D:\Anaconda\python.exe' -m app.rag warm-model
+```
+
+这会通过 sentence-transformers 下载到正常的 Hugging Face 本地缓存，默认不使用仓库目录；
+需联网且预留模型缓存空间。预热进程退出后，服务仍需首次将缓存权重加载到内存，随后复用同一实例。
+`LocalE5EmbeddingProvider` 在第一次真实推理时延迟加载，加载和推理有锁保护；
+工厂在同一进程复用 provider 和 Qdrant client，不会每次请求重新加载模型。
+FastAPI `/health` 和普通单元测试均不下载或加载真实模型；CLI 和 FastAPI lifespan 会关闭已创建的 Qdrant client。
+模型权重、缓存和 `.env` 不提交到 Git。
+
+先启动本地 Go Backend，使用真实登录取得本人 JWT，并从 Go API 确认文章和版本存在。
+以下命令的 ID/版本仅为示例，替换为自己的数据；命令运行时隐藏输入 JWT，不把 Token 写在命令行或文档中：
+
+```powershell
+& 'D:\Anaconda\python.exe' -m app.rag index --article-id 18 --version-no 1
+& 'D:\Anaconda\python.exe' -m app.rag ask --article-id 18 --version-no 1 --question '这个版本如何介绍 Redis 持久化？'
+```
+
+`index` 只需要 Go、embedding 和 Qdrant；`ask` 使用现有 `AgentRunner`，还需配置 `GROQ_API_KEY`。
+没有增加聊天 HTTP API。应用内部也可调用 `get_rag_service().index_article_version(...)`；
+检索工具通过 Runtime Context 获得本次 JWT，身份不会进入工具 schema、上下文文本或模型输入。
+自定义 Runner 测试/配置应显式传入相应的 `rag_service`；不传时使用集中配置的进程级实例。
+
+### Profile 隔离、点模型与重建
+
+`EmbeddingProvider` 协议位于 `app/rag/embedding.py`，提供 `dimension`、`profile`、
+`embed_documents` 和 `embed_query`。索引和检索只依赖该协议，不依赖 SentenceTransformer。
+本地实现使用 `passage: <chunk text>` 和 `query: <question>`，并归一化向量；
+前缀只存在于推理输入，原文、Go Chunk 和 Qdrant payload 都不会被添加前缀。
+
+集合创建时写入 metadata：
+
+```json
+{"embedding_profile":{"provider":"local_e5","model":"intfloat/multilingual-e5-small","dimension":384,"distance":"Cosine","collection":"article_chunks_e5_v1"}}
+```
+
+每次读写都核对实际 size、distance 和完整 profile。即使维度相同，只要模型或 provider 不同就拒绝使用；
+现有无 profile 的集合也不会被自动认领或删除。更换模型时必须使用新集合、重新显式索引。
+Provider 和 Store 在组装服务时也必须具有完全一致的 profile；未知 provider 明确报错，不回退到本地 E5。
+
+一个 Go Chunk 对应一个 Point。ID 为固定 UUID namespace 下
+`blog-system/article/{article_id}/version/{version_no}/chunk/{chunk_index}` 的 UUIDv5。
+payload 仅包含：`user_id`、`article_id`、`version_no`、`chunk_index`、`heading_path`、`text`；
+前三个字段建立整数 payload index。没有 HTML DOM，也不保存完整 Blocks。
+检索与删除均使用 `user_id AND article_id AND version_no`，不进行跨文章检索。
+
+重建顺序：获取所有 Go chunks → 生成所有向量 → 校验数量、维度、有限非零值 →
+校验集合 profile → 删除该用户/文章/版本旧点 → 批量 upsert 新点。
+因此旧 chunk 3 在新结果仅有 0～2 时会被清除，空结果会清空该版本索引，重复索引不会增加逻辑点数。
+embedding 失败发生在删除前；删除成功而 upsert 失败时可能暂时缺少索引，显式重试可修复。
+该过程不是数据库事务，不自动重试写操作；当前仅在单进程内串行化替换操作，未提供跨进程写入锁。
+
+### Render / 生产配置边界
+
+Render 应通过环境变量配置 `APP_ENV=production`、外部 `QDRANT_URL` / `QDRANT_API_KEY`，
+以及一整组远程 provider / model / dimension / distance / collection 配置。
+不能只改模型名称却继续使用旧集合，也不应将 Qdrant 数据保存到 Render 临时磁盘。
+
+**本任务只实现本地 `LocalE5EmbeddingProvider`，没有实现任何真实远程 embedding API 适配器。**
+生产环境不会自动启动本地模型：`APP_ENV=production` 下的 `local_e5` 会明确报错；
+未实现的远程 provider 同样明确报错。`/health` 仍只是进程存活检查，不代表 RAG readiness。
+
+真正部署前仍需选择远程服务，编写一个实现相同 `EmbeddingProvider` 协议的 HTTP adapter，
+在 `create_embedding_provider` 注册并加入该服务所需的集中配置、凭据和契约测试。
+索引、检索和 LangGraph 逻辑无需重写。随后配置外部持久化 Qdrant、Go 服务地址及密钥，
+验证实际 embedding profile、网络连通性、权限和生产容量，并显式重建新集合。
+如远程服务运行同一 E5 模型，前缀规则也应由该 adapter 负责，不放到通用索引逻辑中。
+
+### 测试与当前限制
+
+```powershell
+& 'D:\Anaconda\python.exe' -m pytest
+```
+
+新增测试使用 FakeEmbedding、FakeModel、httpx.MockTransport 和 Qdrant SDK 内存模式；
+覆盖前缀、单次加载、profile/实际集合规格校验、点身份、重建、失败保护、三重过滤、Top-K、
+Go 原文校对及真实 LangGraph/ToolNode/JWT Context 回路。内存模式不实际建立 payload 索引，
+测试另外校验建索引请求；不能据此宣称已验证 Docker 网络或真实模型检索质量。
+
+当前只支持单个指定文章版本的 Dense Top-K。未索引时返回空结果，不自动建索引；
+空结果不证明该版本没有相关内容，Agent 应说明没有可用检索依据。
+无相似度阈值或 reranker；上下文保持 Qdrant 返回顺序，最终自然语言生成仍依赖模型。
+Go Task 09 按字符/语义块分块，而 E5 超过模型的 512 token 上限时会截断 embedding 输入，
+详见 [E5 模型说明](https://huggingface.co/intfloat/multilingual-e5-small)。原文仍完整保存；本任务不增加 token 重分块。
+每次检索为保证 Go 是权限与内容真源会重新获取整份版本分块，当前以正确性优先，尚未优化该开销。

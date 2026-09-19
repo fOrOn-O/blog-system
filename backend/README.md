@@ -358,3 +358,30 @@ make clean
 ## License
 
 MIT License
+## Task 10：Agent 历史版本分块 API
+
+`GET /api/v1/agent/articles/:id/versions/:version/chunks` 复用 JWT 中间件及文章所有权规则。
+仅所有者可读取，其他用户（包括其他管理员）返回 403；文章、历史版本缺失或文章已删除返回 404；
+非正整数 ID/版本返回 400。读取不增加浏览量，不更新 Article / ArticleVersion / PublishedVersion。
+
+Service 通过 Repository 获取指定不可变快照，调用现有 Task 09 `ChunkHTML` 默认选项和 `RenderText`。
+成功响应沿用 `{code, message, data}`，`data` 为：
+
+```json
+{
+  "user_id": 7,
+  "article_id": 18,
+  "version_no": 1,
+  "chunks": [{
+    "index": 0,
+    "heading_path": [{"level": 1, "text": "Redis"}],
+    "blocks": [{"type": "paragraph", "text": "正文"}],
+    "text": "Redis\n\n正文"
+  }]
+}
+```
+
+`user_id` 来自服务端验证后的 JWT，用于 Python 的 Qdrant 检索隔离，不能由请求覆盖。
+`text` 仅是 API 派生表示，未添加到 Task 09 内部 Chunk 模型或数据库；空分块返回 `[]`。
+Python 只能通过此 API 获得分块；本接口不自动建立或更新任何向量索引。
+本地 Qdrant、embedding 和显式索引操作见 [Agent Service README](../agent-service/README.md#task-10指定文章版本的-dense-rag)。

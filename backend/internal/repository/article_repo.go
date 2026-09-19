@@ -229,6 +229,22 @@ func (r *ArticleRepository) FindOwnedByID(userID, articleID uint) (*model.Articl
 	return findOwnedArticle(database.DB.Preload("User").Preload("Tags"), userID, articleID)
 }
 
+// FindOwnedVersion 先校验文章归属，再读取指定快照，不增加浏览量。
+func (r *ArticleRepository) FindOwnedVersion(userID, articleID, versionNo uint) (*model.ArticleVersion, error) {
+	if _, err := findOwnedArticle(database.DB, userID, articleID); err != nil {
+		return nil, err
+	}
+	var version model.ArticleVersion
+	err := database.DB.Where("article_id = ? AND version_no = ?", articleID, versionNo).First(&version).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, model.ErrArticleVersionNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &version, nil
+}
+
 // FindOwnedVersions 先校验文章归属，再查询快照，不读取其他文章的历史版本。
 func (r *ArticleRepository) FindOwnedVersions(userID, articleID, from, to uint) (*model.ArticleVersion, *model.ArticleVersion, error) {
 	if _, err := findOwnedArticle(database.DB, userID, articleID); err != nil {

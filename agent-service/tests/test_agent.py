@@ -190,6 +190,7 @@ def test_only_allowed_tools_and_no_runtime_credentials_in_model_schema(settings)
     expected = {
         "get_article": {"article_id"},
         "get_version_diff": {"article_id", "from_version", "to_version"},
+        "search_article_version": {"article_id", "version_no", "query"},
         "list_my_articles": {"page", "limit", "status"},
         "create_draft": {"title", "content", "summary", "cover_image", "tag_ids"},
         "update_draft": {"article_id", "expected_version", "title", "content", "summary", "cover_image", "tag_ids"},

@@ -7,6 +7,9 @@ from langgraph.prebuilt.tool_node import ToolInvocationError
 from pydantic import Field
 
 from app.agent.context import AgentContext
+from app.core.rag import get_rag_service
+from app.rag.errors import RagError
+from app.rag.models import assemble_context
 from app.clients.errors import (
     ArticleNotFoundError,
     AuthenticationError,
@@ -45,6 +48,7 @@ def safe_tool_error(error: Exception) -> str:
         (BlogBackendUnavailableError, "backend_unavailable", "博客服务暂不可用。写入是否完成尚不确定，不要自动重试。"),
         (BlogBackendError, "backend_error", "博客服务返回异常，无法确认本次操作结果。"),
         (BlogRequestError, "invalid_request", "博客服务拒绝了请求，请检查业务参数。"),
+        (RagError, "rag_unavailable", "版本检索暂不可用，请检查索引和检索服务配置。"),
         ((ToolInvocationError, ValueError, TypeError), "invalid_arguments", "工具参数无效，请检查必填字段和版本号。"),
     )
     for error_type, code, message in mappings:
@@ -140,5 +144,25 @@ async def get_version_diff(
     return {"ok": True, "data": result.model_dump(mode="json")}
 
 
+@tool
+async def search_article_version(
+    article_id: PositiveInt,
+    version_no: PositiveInt,
+    query: Annotated[str, Field(min_length=1)],
+    runtime: ToolRuntime[AgentContext],
+) -> dict:
+    """只读检索本人指定文章历史版本，返回按相关性排序的内容供回答问题；不会自动建索引。"""
+    service = runtime.context.rag_service or get_rag_service()
+    chunks = await service.search_article_version(
+        article_id, version_no, query, access_token=runtime.context.access_token,
+        blog_client=runtime.context.blog_client,
+    )
+    return {"ok": True, "data": {
+        "article_id": article_id, "version_no": version_no,
+        "chunks": [c.model_dump(mode="json") for c in chunks],
+        "context": assemble_context(chunks),
+    }}
+
+
 # 模型绑定和 ToolNode 实际执行使用同一份工具白名单。
-AGENT_TOOLS = (get_article, list_my_articles, create_draft, update_draft, get_version_diff)
+AGENT_TOOLS = (get_article, list_my_articles, create_draft, update_draft, get_version_diff, search_article_version)

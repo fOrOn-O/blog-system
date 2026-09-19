@@ -110,3 +110,27 @@ class ArticleVersionDiff(BaseModel):
     to_version: PositiveInt
     field_changes: ArticleFieldChanges
     content: ContentChanges
+
+
+class Heading(BaseModel):
+    level: Annotated[int, Field(strict=True, ge=1, le=6)]
+    text: str
+
+
+class ChunkBlock(BaseModel):
+    type: Literal["paragraph", "list_item", "blockquote", "code_block"]
+    text: str
+
+
+class ArticleChunk(BaseModel):
+    index: Annotated[int, Field(strict=True, ge=0)]
+    heading_path: list[Heading]
+    blocks: list[ChunkBlock]
+    text: str
+
+
+class ArticleVersionChunks(BaseModel):
+    user_id: PositiveInt
+    article_id: PositiveInt
+    version_no: PositiveInt
+    chunks: list[ArticleChunk]

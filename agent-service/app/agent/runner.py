@@ -8,13 +8,15 @@ from app.agent.graph import build_graph
 from app.clients.blog import BlogClient
 from app.core.config import Settings, get_settings
 from app.core.model import create_model
+from app.rag.service import ArticleRagService
 
 
 class AgentRunner:
     """Reuse the compiled graph/model; each run has fresh messages and credentials."""
 
-    def __init__(self, model: BaseChatModel | None = None, *, settings: Settings | None = None):
+    def __init__(self, model: BaseChatModel | None = None, *, settings: Settings | None = None, rag_service: ArticleRagService | None = None):
         self.settings = settings if settings is not None else get_settings()
+        self.rag_service = rag_service
         self.graph = build_graph(model if model is not None else create_model(self.settings))
 
     async def run(
@@ -25,9 +27,9 @@ class AgentRunner:
         if not isinstance(access_token, str) or not access_token or any(c.isspace() for c in access_token):
             raise ValueError("access_token must be a nonempty token without whitespace")
         if blog_client is not None:
-            return await self._invoke(message, AgentContext(access_token, blog_client))
+            return await self._invoke(message, AgentContext(access_token, blog_client, self.rag_service))
         async with BlogClient(self.settings) as client:
-            return await self._invoke(message, AgentContext(access_token, client))
+            return await self._invoke(message, AgentContext(access_token, client, self.rag_service))
 
     async def _invoke(self, message: str, context: AgentContext) -> AIMessage:
         try:
