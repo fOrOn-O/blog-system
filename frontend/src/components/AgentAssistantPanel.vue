@@ -4,10 +4,12 @@ import { ElMessageBox } from 'element-plus'
 import { chatWithWorkspace } from '@/api/agent'
 import { previewEditProposal, applyEditProposal } from '@/api/article'
 import ArticleDiff from './ArticleDiff.vue'
+import KnowledgeSources from './KnowledgeSources.vue'
 
 const props = defineProps({ workspace: Object, currentVersion: Number, dirty: Boolean, disabled: Boolean })
 const emit = defineEmits(['applied', 'refresh', 'busy', 'conflict'])
 const message = ref('')
+const mode = ref('question')
 const messages = ref([])
 const sending = ref(false)
 const chatError = ref('')
@@ -49,8 +51,8 @@ async function send() {
   sending.value = true
   chatError.value = ''
   try {
-    const result = await chatWithWorkspace(text, workspace)
-    messages.value.push({ role: '助手', text: result.answer, workspace })
+    const result = await chatWithWorkspace(text, workspace, mode.value)
+    messages.value.push({ role: '助手', text: result.answer, workspace, sources: result.sources })
     if (result.proposal) {
       if (result.proposal.article_id !== workspace.article_id || result.proposal.base_version_no !== workspace.version_no) throw new Error('workspace mismatch')
       // 保存响应自己的身份，后续切换文章/版本绝不改写。
@@ -136,6 +138,7 @@ async function apply() {
       <article v-for="(item, index) in messages" :key="index" class="chat-message">
         <small>{{ item.role }} · #{{ item.workspace.article_id }} / V{{ item.workspace.version_no }}</small>
         <p>{{ item.text }}</p>
+        <KnowledgeSources :sources="item.sources || []" :public-links="false" />
       </article>
       <p v-if="sending">助手正在处理…</p><p v-if="chatError" role="alert">{{ chatError }}</p>
     </div>
@@ -155,8 +158,9 @@ async function apply() {
       </div>
     </section>
     <form class="composer" @submit.prevent="send">
+      <label>助手模式 <select v-model="mode" aria-label="助手模式" :disabled="sending || !!proposal"><option value="question">版本问答</option><option value="write">写作提案</option></select></label>
       <label for="agent-message">向助手提问</label>
-      <textarea id="agent-message" v-model="message" rows="3" maxlength="12000" :disabled="sending || disabled || !!proposal || !workspace" placeholder="例如：改写介绍段，保留其他内容" />
+      <textarea id="agent-message" v-model="message" rows="3" maxlength="12000" :disabled="sending || disabled || !!proposal || !workspace" :placeholder="mode === 'question' ? '询问当前已保存版本中的内容' : '例如：改写介绍段，保留其他内容'" />
       <p v-if="proposal" class="hint">先处理或丢弃当前提案，再发送新消息。</p>
       <el-button native-type="submit" type="primary" :loading="sending" :disabled="sending || disabled || !!proposal || !workspace || !message.trim()">发送</el-button>
     </form>

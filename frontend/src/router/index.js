@@ -5,6 +5,12 @@ import { scrollBehavior } from './scroll-behavior'
 
 const routes = [
   {
+    path: '/knowledge',
+    name: 'Knowledge',
+    component: () => import('@/views/Knowledge.vue'),
+    meta: { title: '站内知识助手', requiresAuth: true }
+  },
+  {
     path: '/',
     name: 'Home',
     component: () => import('@/views/Home.vue'),

@@ -539,16 +539,124 @@ Task 13 的预览渲染和批准交互必须把 HTML 视为不可信内容。
 `POST /api/v1/agent/chat` 接受用户 Bearer JWT 和：
 
 ```json
-{"message":"改写介绍段","workspace":{"article_id":23,"version_no":7}}
+{"message":"改写介绍段","mode":"write","workspace":{"article_id":23,"version_no":7}}
 ```
 
-返回 Task 11 的 `{"answer":"...","proposal":null}` 或完整结构化 proposal。
+返回 `answer`、`proposal`，以及问答用的 `has_evidence` / `sources`（写作模式为 null / 空数组）。
 请求不接受 user_id、token 或额外 workspace 身份字段。入口先通过 BlogClient 向 Go 验证
 指定历史版本的所有权和存在性，再创建/复用 Runner，将工作区和请求 JWT 注入运行上下文。
 Go 的 401/403/404 保持对应状态，模型/上游失败返回脱敏 502；消息为空或结构非法返回 422。
-同一图提供问答、显式指定历史版本的 RAG 和写作提案，没有第二个聊天系统。
+Task 13.5 中 HTTP 默认 `mode=question`，强制检索活动版本后回答；`mode=write` 保留完整快照与提案图。
 Runner/模型按进程延迟复用；每次请求仍是独立运行，无 checkpoint、对话持久化或记忆。
 
-此接口只能调用 `run_with_response()` 白名单。Preview/Apply 由前端直接请求 Task 12 Go 应用接口，
+写作模式只能调用 `run_with_response()` 提案白名单。Preview/Apply 由前端直接请求 Task 12 Go 应用接口，
 没有新增 Apply 工具或 Python 业务数据库写入。使用同源前端反向代理接入，部署说明见 frontend README。
 浏览器 E2E 的 tests/e2e_app.py 仅用于测试：替换 LLM，配置独立本地 Go fixture，不加载 `.env` 密钥。
+
+## Task 13.5：版本问答与全站已发布知识
+
+两种检索范围使用独立 collection，不混用 active published view 和历史版本：
+
+| 范围 | Cloud collection | 事实与权限 |
+| --- | --- | --- |
+| ArticleEdit 的 exact version | `article_chunks_e5_cloud_v1` | Go 校验当前 JWT 所有权及 article_id/version_no，仍需显式 index |
+| 全站 Published Knowledge | `published_knowledge_e5_cloud_v1` | Go 决定当前公开快照，所有登录用户查询同一个全站范围，无 user_id/ownership 过滤 |
+
+本地配置 `PUBLISHED_KNOWLEDGE_COLLECTION=published_knowledge_e5_v1`；Render 配置
+`PUBLISHED_KNOWLEDGE_COLLECTION=published_knowledge_e5_cloud_v1`。它必须与 `QDRANT_COLLECTION` 不同。
+两者分别写入包含自身 collection 名称的 embedding_profile metadata，模型同为 E5-small / 384 / Cosine。
+本地继续复用单个 LocalE5EmbeddingProvider；Cloud 不安装/加载本地模型，不添加 passage/query 前缀。
+
+### Go canonical source 与登录边界
+
+只读 API：`GET /api/v1/agent/published-knowledge` 返回全站数组；
+`GET /api/v1/agent/published-knowledge/:id` 返回单篇的零或一个记录。
+记录包含 `article_id`、公开快照 `title`、`published_version`、Task 09 canonical `chunks`。
+Go 以同一 SQL join 选择 status=published、published_version>0 且对应快照存在的未删除文章。
+工作草稿、历史版本、归档、缺失快照不返回；单篇未公开与不存在统一为 `[]`，不增加浏览量。
+
+当前 Python Knowledge API 和 Go source API 入口均要求 Bearer JWT。JWT 在 Python 中只作为 Go API 凭据，
+不进入 payload、向量过滤条件、模型上下文或 source DTO；Published retrieval 不接收 user_id，也不校验 ownership。
+未来开放匿名访问时调整 API/Go source 客户端的认证约定即可，无需修改检索算法或迁移集合。
+Exact version 的 owner 权限不因 Published Knowledge 而放宽。
+
+### 单进程请求限流
+
+Python Agent Chat、Knowledge Chat 和 HTTP 单篇知识同步共用每个已认证用户的滑动窗口额度：
+`CHAT_RATE_LIMIT_REQUESTS=10`、`CHAT_RATE_LIMIT_WINDOW_SECONDS=60`。
+入口先调用 Go `/api/v1/user/profile` 获取经验证的用户 ID，再检查额度，超限不读取全文、不查询 Qdrant、不调用模型。
+更换 JWT 不会绕过同一用户额度；ID 不传入 site-wide retrieval，不作为 ownership 过滤条件。
+429 返回固定 `detail.code=rate_limit_exceeded`、中文安全消息及 `Retry-After` 秒数，不返回凭据或后端异常。
+同步被限流不改变已提交的 Publish；可等待后通过页面手动重试，运维 reconcile 不通过普通 Agent tool 暴露。
+
+限流状态只有进程内内存，使用锁保护并发请求，不记录 JWT、不持久化 key、不增加 Redis 或其他服务。
+最多保留 10000 个活动主体，过期条目自动清理；进程重启清零。health 不受限。
+当前 Render 应保持单实例、单 Python worker；多 worker 也会有独立计数，不能视为全局共享配额。
+`Limiter` 协议和集中 `get_request_limiter()` 工厂允许以后替换分布式 backend；
+主体命名空间为 `("user", verified_id)`，未来匿名入口可提供可信 `("ip", address)`，当前不信任客户端提交的 IP/subject。
+此阶段不实现匿名访问、分布式限流或持久化限流。
+
+### 同步与全站修复
+
+`POST /api/v1/agent/knowledge/sync/:article_id` 只修派生索引，不调用任何 Go 写接口。
+前端在 Go 创建并发布、保存并发布、发布、归档、删除成功后独立调度同步；业务请求立即返回，
+不等待 embedding。失败只显示“业务已完成，索引同步失败”及重试入口；不回滚业务、不自动重试失败请求。
+同一文章同步期间若发生新的业务操作，会在当前同步结束后再按最新 Go 状态同步。
+保存草稿、Proposal、Preview、Apply 不触发 Published sync，也不自动建立 exact index。
+
+这不是可靠消息投递：关闭页面、其他客户端直接调用 Go、跨实例竞态可能使索引暂时 stale。
+应在首次部署、外部批量发布或同步失败后显式运行 reconcile；不添加队列、后台记忆或强事务。
+
+```sh
+cd agent-service
+python -m app.knowledge sync --article-id 18
+python -m app.knowledge reconcile
+```
+
+JWT 在终端隐藏输入，不作为命令行参数或持久化配置。reconcile 获取 Go 全站公开 ID 和索引内已存在 ID 的并集，
+逐篇重新读取 Go 当前状态，以修复遗漏文章、旧版本、重复旧点、已归档/删除文章及半途失败。
+实现使用全站源列表和 Qdrant scroll 分页；目前适合此个人博客规模，尚未分页传输 Go 全站正文。
+
+替换沿用 13.5-A 的共同写入函数：准备全部点 → 分批 UPSERT(wait=True) → 验证全部 ID/数量/完整 payload
+→ 精确 DELETE stale(wait=True)。旧版本 UUID 也在该文章 stale 范围内。
+任何写入或验证失败都不提前删除旧点；已写批次不会事务回滚，显式 sync/reconcile 可恢复。
+空/非公开目标不推理，清理该文章已有点。进程内锁包含源查询与替换，没有跨进程锁；
+操作期间 Go 仍可更新，修复期间查询使用 canonical 校验，不把索引中的状态当作事实。
+SDK 错误对外为固定安全消息，不打印密钥、JWT 或网络异常原文。
+
+### 强制检索与结构化来源
+
+`POST /api/v1/agent/knowledge/chat` 请求仅为 `{"query":"问题"}`，拒绝 user_id/article_id/version_no/top_k/conversation_id。
+服务固定执行 `search_published_knowledge` → canonical 校验 → grounded answer，不让模型决定是否检索。
+查询不带身份过滤，只查询 published collection；在查询后再次读取 Go，核对 article/version/index/title/text/heading_path。
+内部取 `min(RAG_TOP_K*3,100)` 候选，按原始排名去重，每篇最多两块，最终最多 RAG_TOP_K，score 保持不变。
+候选过取和每篇上限不保证一定命中多篇；当前没有 reranker、相关性阈值或检索质量评测。
+
+返回 `answer`、`has_evidence`、结构化 `sources`，每项包含 article_id/title/version_no/chunk_index/heading_path。
+sources 由程序从验证过的证据构造，不从模型生成文本解析；前端用受控文章 ID 打开 `/article/:id`。
+公开链接打开点击时的当前公开版本，source.version_no 表示回答时使用的版本，二者可能随再次发布而变化。
+无有效 evidence 直接返回明确的无依据提示，完全不调用 LLM；服务故障返回错误，不伪装成无依据。
+有 evidence 时模型仅接收问题和验证后的证据，提示禁止参数知识补全。仍需真实模型 smoke 检查语言事实准确性。
+
+ArticleEdit 默认“版本问答”，只使用应用绑定的已保存 article_id/version_no，忽略浏览器未保存 HTML。
+程序先检索 exact version，再生成答案；没有 evidence 不调用模型。LLM 不选择其他文章/版本或调用写工具。
+“写作提案”明确选择 `mode=write`，保留全文读取 → 单次提案 → Preview → Human Approval → Apply，
+不使用 chunks 替代写作快照；旧 `run()` 不变。低层 `run_with_response()` 的旧写作默认值保留，HTTP 明确传入 mode。
+每次知识请求独立，无 conversation_id、checkpoint、Redis 历史或长期记忆。
+
+### 验证与上线门槛
+
+普通 pytest 使用 mock Cloud、内存 Qdrant、FakeEmbedding/FakeModel；不会下载权重或调用 production。
+浏览器 E2E 保留真实 Vue/FastAPI/BlogClient/Go/SQLite 链路，RAG 使用内存 Qdrant 与 FakeEmbedding，
+写作保留真实 LangGraph/ToolNode；无依据/错误/恶意 source 的部分前端展示场景用路由 mock。
+测试不能替代真实 Cloud/Groq/TiDB 的生产语义和质量验证。
+
+Review 通过后统一提交、推送、部署 Go/Python/Frontend，再进行 production smoke：
+
+1. Render 保留 13.5-A 的 Cloud 配置并增加 PUBLISHED_KNOWLEDGE_COLLECTION，运行显式 reconcile。
+2. 选取有授权的测试文章，验证首次已发布版本被索引；继续保存工作稿，知识回答仍引用旧公开版本。
+3. 发布新版本，先确认 Go Publish 成功，再确认 sync 成功且旧 published points 退出。
+4. 用跨两篇文章的问题检查综合回答、sources 及公开链接；用 exact version 检查 ArticleEdit 问答。
+5. 验证无 evidence 分支、归档过滤与同步失败恢复；不打印 JWT/密钥。
+
+本次代码/本地测试完成不代表剩余 Task 13.5 已上线；production full E2E 完成前不封板。

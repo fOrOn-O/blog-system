@@ -1,4 +1,6 @@
 import api from './index'
+import { queueKnowledgeSync } from './knowledge'
+import { commitThenSync } from '@/utils/knowledge'
 
 // 获取文章列表
 export function getArticles(params) {
@@ -25,8 +27,8 @@ export const getArticleVersion = (id, version) => api.get(`/agent/articles/${id}
 export const getVersionDiff = (id, from, to) => api.get(`/agent/articles/${id}/diff`, { params: { from_version: from, to_version: to } })
 export const createDraft = data => api.post('/articles/drafts', data)
 export const saveDraft = (id, data) => api.put(`/articles/${id}/draft`, data)
-export const publishArticle = (id, version) => api.post(`/articles/${id}/publish`, { expected_version: version })
-export const archiveArticle = id => api.post(`/articles/${id}/archive`)
+export const publishArticle = (id, version) => commitThenSync(() => api.post(`/articles/${id}/publish`, { expected_version: version }), queueKnowledgeSync, id)
+export const archiveArticle = id => commitThenSync(() => api.post(`/articles/${id}/archive`), queueKnowledgeSync, id)
 
 // 只投影允许的字段，批准操作直接到 Go，不经过 Agent。
 const proposalBody = proposal => ({ base_version_no: proposal.base_version_no, proposed_content: proposal.proposed_content })
@@ -39,17 +41,17 @@ export function getMyArticles(params) {
 
 // 创建文章
 export function createArticle(data) {
-  return api.post('/articles', data)
+  return commitThenSync(() => api.post('/articles', data), queueKnowledgeSync)
 }
 
 // 更新文章
 export function updateArticle(id, data) {
-  return api.put(`/articles/${id}`, data)
+  return commitThenSync(() => api.put(`/articles/${id}`, data), queueKnowledgeSync, id)
 }
 
 // 删除文章
 export function deleteArticle(id) {
-  return api.delete(`/articles/${id}`)
+  return commitThenSync(() => api.delete(`/articles/${id}`), queueKnowledgeSync, id)
 }
 
 // 点赞文章

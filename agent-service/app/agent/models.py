@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agent.html_validation import validate_proposed_html
 from app.clients.models import PositiveInt
+from app.knowledge.models import KnowledgeSource
 
 
 class AgentWorkspace(BaseModel):
@@ -39,3 +40,5 @@ class AgentResponse(BaseModel):
 
     answer: str
     proposal: ArticleEditProposal | None = None
+    has_evidence: bool | None = None
+    sources: list[KnowledgeSource] = Field(default_factory=list)

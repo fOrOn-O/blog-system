@@ -136,6 +136,13 @@ class ArticleVersionChunks(BaseModel):
     chunks: list[ArticleChunk]
 
 
+class PublishedKnowledgeRecord(BaseModel):
+    article_id: PositiveInt
+    title: str
+    published_version: PositiveInt
+    chunks: list[ArticleChunk]
+
+
 class ArticleVersion(BaseModel):
     model_config = ConfigDict(frozen=True)
 

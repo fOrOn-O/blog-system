@@ -21,9 +21,11 @@ def setup_chat(monkeypatch):
 
     def transport(request):
         calls.append(request)
-        return httpx.Response(status[0], json={"code": status[0], "data": version_data(), "message": "private-detail"})
+        data = {"id": 7} if request.url.path == "/api/v1/user/profile" else version_data()
+        return httpx.Response(status[0], json={"code": status[0], "data": data, "message": "private-detail"})
 
     monkeypatch.setattr(chat, "BlogClient", lambda _: BlogClient(settings, transport=httpx.MockTransport(transport)))
+    monkeypatch.setattr(chat, "limit_user", Mock())
     runner = Mock()
     runner.run_with_response = AsyncMock(return_value=AgentResponse(answer="你好", proposal=None))
     factory = Mock(return_value=runner)
@@ -40,11 +42,13 @@ def body():
 def test_chat_verifies_workspace_and_injects_jwt(setup_chat):
     client, runner, factory, calls, _ = setup_chat
     response = client.post("/api/v1/agent/chat", json=body(), headers={"Authorization": "Bearer test-token"})
-    assert response.status_code == 200 and response.json() == {"answer": "你好", "proposal": None}
-    assert len(calls) == 1 and calls[0].url.path == "/api/v1/agent/articles/23/versions/7"
+    assert response.status_code == 200 and response.json() == {"answer": "你好", "proposal": None, "has_evidence": None, "sources": []}
+    assert len(calls) == 2 and calls[0].url.path == "/api/v1/user/profile"
+    assert calls[1].url.path == "/api/v1/agent/articles/23/versions/7"
     assert calls[0].headers["Authorization"] == "Bearer test-token"
     kwargs = runner.run_with_response.call_args.kwargs
     assert kwargs["access_token"] == "test-token"
+    assert kwargs["mode"] == "question"
     assert kwargs["workspace"].model_dump() == body()["workspace"]
     assert "test-token" not in response.text
 

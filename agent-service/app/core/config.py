@@ -17,9 +17,12 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="openai/gpt-oss-20b", min_length=1)
     llm_timeout_seconds: float = Field(default=30, gt=0, allow_inf_nan=False)
     agent_recursion_limit: int = Field(default=12, ge=2, le=50)
+    chat_rate_limit_requests: int = Field(default=10, ge=1, le=10000)
+    chat_rate_limit_window_seconds: int = Field(default=60, ge=1, le=86400)
     qdrant_url: HttpUrl = HttpUrl("http://localhost:6333")
     qdrant_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     qdrant_collection: str = Field(default="article_chunks_e5_v1", pattern=r"^[A-Za-z0-9_-]+$")
+    published_knowledge_collection: str = Field(default="published_knowledge_e5_v1", pattern=r"^[A-Za-z0-9_-]+$")
     qdrant_timeout_seconds: float = Field(default=10, gt=0, allow_inf_nan=False)
     embedding_provider: str = Field(default="local_e5", min_length=1)
     embedding_model: str = Field(default="intfloat/multilingual-e5-small", min_length=1)
@@ -31,6 +34,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_embedding_profile(self):
+        if self.published_knowledge_collection == self.qdrant_collection:
+            raise ValueError("Published knowledge and exact versions require separate collections")
         if self.embedding_provider in {"local_e5", "qdrant_cloud"} and (
             self.embedding_model != "intfloat/multilingual-e5-small"
             or self.embedding_dimension != 384 or self.qdrant_distance != "Cosine"

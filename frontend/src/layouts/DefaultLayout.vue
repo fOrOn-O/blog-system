@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessageBox } from 'element-plus'
+import { knowledgeSync, queueKnowledgeSync } from '@/api/knowledge'
 
 const router = useRouter()
 const route = useRoute()
@@ -97,6 +98,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
         <nav class="nav-links" aria-label="主导航">
           <button type="button" @click="goToHomeSection('#featured')">发现</button>
           <button type="button" @click="goToHomeSection('#latest-notes')">最新文章</button>
+          <button type="button" @click="router.push('/knowledge')">站内知识</button>
         </nav>
 
         <div class="nav-tools">
@@ -147,6 +149,12 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     </header>
 
     <main class="main" :class="{ 'main--home': isHome }">
+      <div v-for="(state, id) in knowledgeSync" :key="id" class="container" role="status">
+        <template v-if="state === 'failed'">文章 #{{ id }} 的业务操作已完成，知识索引同步失败。
+          <el-button @click="queueKnowledgeSync(Number(id))">重试知识同步</el-button>
+        </template>
+        <span v-else>文章 #{{ id }} 的业务操作已完成，正在同步知识索引…</span>
+      </div>
       <slot />
     </main>
 

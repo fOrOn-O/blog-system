@@ -93,6 +93,8 @@ func SetupRouter() *gin.Engine {
 			// Agent 业务入口继承用户 JWT 认证，复用 Owner 读取及草稿工作流处理器。
 			agent := protected.Group("/agent")
 			{
+				agent.GET("/published-knowledge", articleHandler.PublishedKnowledge)
+				agent.GET("/published-knowledge/:id", articleHandler.PublishedKnowledge)
 				agent.GET("/articles", articleHandler.ListMyArticles)
 				agent.GET("/articles/:id", articleHandler.GetOwnedArticle)
 				agent.GET("/articles/:id/diff", articleHandler.GetVersionDiff)

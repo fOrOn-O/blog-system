@@ -30,12 +30,13 @@ def chunk_payload(source: ArticleVersionChunks, chunk: ArticleChunk) -> dict:
 
 
 class QdrantChunkStore:
-    def __init__(self, client: AsyncQdrantClient, settings: Settings):
+    def __init__(self, client: AsyncQdrantClient, settings: Settings, *, index_fields=("user_id", "article_id", "version_no")):
         self.client = client
         self.collection = settings.qdrant_collection
         self.dimension = settings.embedding_dimension
         self.distance = models.Distance(settings.qdrant_distance)
         self.profile = settings.embedding_profile
+        self.index_fields = index_fields
         self._setup_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
 
@@ -56,7 +57,7 @@ class QdrantChunkStore:
             if (info.config.metadata or {}).get("embedding_profile") != self.profile:
                 raise RagConfigurationError("Qdrant collection embedding profile is missing or incompatible; use a new collection")
             if create:
-                for name in ("user_id", "article_id", "version_no"):
+                for name in self.index_fields:
                     existing = info.payload_schema.get(name)
                     if existing is not None and existing.data_type != models.PayloadSchemaType.INTEGER:
                         raise RagConfigurationError("Qdrant payload index type does not match configuration")

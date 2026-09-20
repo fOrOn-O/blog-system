@@ -25,6 +25,7 @@ async function openArticle(page, request, versions = 1) {
 }
 
 async function send(page, text = '请补充结论') {
+  await page.getByLabel('助手模式').selectOption(text === '你好' ? 'question' : 'write')
   await page.getByLabel('向助手提问').fill(text)
   const response = page.waitForResponse(r => r.url().endsWith('/chat'))
   await page.getByRole('button', { name: '发送', exact: true }).click()
@@ -51,12 +52,12 @@ async function approve(page) {
 test('真实 Vue → Python Graph → Go：问答、提案、预览、人工确认、草稿刷新', async ({ page, request }) => {
   const { article, headers } = await openArticle(page, request)
   await send(page, '你好')
-  await expect(page.getByText('你好，可以围绕当前版本提问或提出修改。', { exact: true })).toBeVisible()
+  await expect(page.getByText(/没有足够检索依据/)).toBeVisible()
   await expect(page.getByRole('region', { name: '编辑提案' })).toHaveCount(0)
   const requests = []
   page.on('request', req => requests.push(req))
   await proposal(page)
-  expect(requests.find(r => r.url().endsWith('/chat')).postDataJSON()).toEqual({ message: '请补充结论', workspace: { article_id: article.id, version_no: 1 } })
+  expect(requests.find(r => r.url().endsWith('/chat')).postDataJSON()).toEqual({ message: '请补充结论', mode: 'write', workspace: { article_id: article.id, version_no: 1 } })
   await expect(page.getByText('保留原文，补充结论段', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '应用修改', exact: true })).toBeDisabled()
   requests.length = 0

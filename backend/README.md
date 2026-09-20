@@ -527,3 +527,17 @@ SQLite 测试不等同于 MySQL 并发集成测试；MySQL 行锁继续沿用既
 浏览器 E2E fixture 为 `TestTask13E2EServer`，仅在 `TASK13_E2E=1` 时启动，
 使用测试内存 SQLite/测试身份并绑定 127.0.0.1:18080。普通 `go test ./...` 跳过服务器 fixture，
 正常运行新增的版本列表权限、分页及只读测试。此 fixture 不读取应用数据库配置，也不用于部署。
+
+# Task 13.5：当前已发布知识源
+
+登录用户可读 `GET /api/v1/agent/published-knowledge`（全站数组）及
+`GET /api/v1/agent/published-knowledge/:id`（单篇零/一个记录）。
+这两个入口使用 JWT 认证，但没有 owner 筛选：全站已发布知识对所有登录用户范围相同。
+数据结构为 `{article_id,title,published_version,chunks}`；标题和分块只来自当前公开 ArticleVersion。
+查询复用 status=published、published_version>0 和公开快照 join，自动排除软删除、归档、
+仅草稿及缺失快照。没有浏览量递增，也不返回账号信息、旧历史版本或未发布工作内容。
+无公开记录与文章不存在统一返回空数组；不依赖 Python、embedding 或 Qdrant。
+
+Publish/Archive/Apply 的事务及缓存逻辑保持原样；派生索引同步在成功业务操作后由前端独立请求 Python。
+其他调用方应显式同步，漏投递由 Python reconcile 修复。开放匿名 Knowledge 时只调整相应 API 认证策略，
+不能因此放宽 exact ArticleVersion 的 ownership 边界。浏览器调用和部署说明见 agent-service README。

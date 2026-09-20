@@ -95,7 +95,7 @@ async def test_no_workspace_chat_and_editing_fail_safely(settings):
     async with BlogClient(settings, transport=httpx.MockTransport(handler)) as blog:
         chat = await runner.run_with_response("你好", access_token="fake-token", blog_client=blog)
         edit = await runner.run_with_response("改写文章 23 第 7 版", access_token="fake-token", blog_client=blog)
-    assert chat.model_dump() == {"answer": "你好", "proposal": None}
+    assert chat.model_dump() == {"answer": "你好", "proposal": None, "has_evidence": None, "sources": []}
     assert edit.proposal is None and "没有活动文章工作区" in edit.answer
     assert json.loads(model.inputs[2][-1].content)["error"] == "workspace_required"
     assert json.loads(model.inputs[3][-1].content)["error"] == "workspace_required"
@@ -325,7 +325,7 @@ async def test_failure_after_submission_does_not_leak_capture_or_read_guard_to_n
     assert next_run.proposal is None
     assert json.loads(model.inputs[4][-1].content)["error"] == "canonical_read_required"
     assert not any(isinstance(m, ToolMessage) for m in model.inputs[3])
-    assert chat.model_dump() == {"answer": "hello", "proposal": None}
+    assert chat.model_dump() == {"answer": "hello", "proposal": None, "has_evidence": None, "sources": []}
     assert isinstance(legacy, AIMessage) and legacy.content == "legacy hello"
     assert len(requests) == 2
 

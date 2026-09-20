@@ -8,6 +8,7 @@ from app.rag.backend import LocalRetrievalBackend, QdrantCloudRetrievalBackend
 from app.rag.errors import RagConfigurationError
 from app.rag.service import ArticleRagService
 from app.rag.store import QdrantChunkStore
+from app.knowledge.service import PublishedKnowledgeService
 
 
 def create_embedding_provider(settings: Settings) -> EmbeddingProvider:
@@ -49,3 +50,26 @@ async def close_rag_service() -> None:
     if get_rag_service.cache_info().currsize:
         await get_rag_service().aclose()
         get_rag_service.cache_clear()
+
+
+@lru_cache
+def get_published_service() -> PublishedKnowledgeService:
+    settings = get_settings()
+    embedding = None
+    if settings.embedding_provider == "local_e5":
+        embedding = get_embedding_provider()
+    elif settings.embedding_provider != "qdrant_cloud":
+        raise RagConfigurationError("Configured embedding provider is not implemented")
+    client = AsyncQdrantClient(url=str(settings.qdrant_url), timeout=settings.qdrant_timeout_seconds,
+        api_key=settings.qdrant_api_key.get_secret_value() or None, check_compatibility=False,
+        cloud_inference=settings.embedding_provider == "qdrant_cloud")
+    # 独立集合及 metadata；同一进程复用本地模型，不重复下载或加载。
+    profile = settings.model_copy(update={"qdrant_collection": settings.published_knowledge_collection})
+    return PublishedKnowledgeService(QdrantChunkStore(client, profile, index_fields=("article_id", "version_no")),
+                                     embedding=embedding, top_k=settings.rag_top_k)
+
+
+async def close_published_service() -> None:
+    if get_published_service.cache_info().currsize:
+        await get_published_service().aclose()
+        get_published_service.cache_clear()

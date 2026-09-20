@@ -8,6 +8,7 @@ from app.rag.embedding import EmbeddingProvider, validate_vectors
 from app.rag.errors import RagConfigurationError, RagError
 from app.rag.models import RetrievedChunk
 from app.rag.store import QdrantChunkStore, chunk_payload, point_id, version_filter
+from app.rag.verified_write import upsert_verify_delete
 
 
 class RetrievalBackend(Protocol):
@@ -94,31 +95,7 @@ class QdrantCloudRetrievalBackend:
                     vector=models.Document(text=chunk.text, model=self.model),
                     payload=chunk_payload(source, chunk),
                 ) for chunk in source.chunks]
-                expected = {point.id: point.payload for point in points}
-                for start in range(0, len(points), self._batch_size):
-                    await self.store.client.upsert(
-                        self.store.collection, points=points[start:start + self._batch_size], wait=True,
-                    )
-
-                ids = list(expected)
-                for start in range(0, len(ids), self._batch_size):
-                    batch = ids[start:start + self._batch_size]
-                    records = await self.store.client.retrieve(
-                        self.store.collection, ids=batch, with_payload=True, with_vectors=False,
-                    )
-                    if len(records) != len(batch) or {record.id for record in records} != set(batch):
-                        raise RagError("Cloud index verification failed; explicit retry is required")
-                    if any(record.payload != expected[record.id] for record in records):
-                        raise RagError("Cloud index payload verification failed; explicit retry is required")
-
-                # 空 chunks 不触发推理；验证空 expected 集合后，精确清理已枚举的旧点。
-                stale_ids = sorted(existing_ids - set(expected), key=str)
-                for start in range(0, len(stale_ids), self._batch_size):
-                    await self.store.client.delete(
-                        self.store.collection,
-                        points_selector=models.PointIdsList(points=stale_ids[start:start + self._batch_size]),
-                        wait=True,
-                    )
+                await upsert_verify_delete(self.store.client, self.store.collection, points, existing_ids, self._batch_size)
         except RagError:
             raise
         except Exception:

@@ -12,6 +12,9 @@ from app.clients.blog import BlogClient
 from app.core.config import Settings, get_settings
 from app.core.model import create_model
 from app.rag.service import ArticleRagService
+from app.core.rag import get_rag_service
+from app.knowledge.answer import grounded_answer
+from app.knowledge.models import KnowledgeHit
 
 
 class AgentRunner:
@@ -43,11 +46,31 @@ class AgentRunner:
     async def run_with_response(
         self, message: str, *, access_token: str, workspace: AgentWorkspace | None = None,
         blog_client: BlogClient | None = None,
+        mode: str = "write",
     ) -> AgentResponse:
         """只读问答/提案入口；保留旧 run() 的返回类型和工具行为。"""
         self._validate_input(message, access_token)
         if workspace is not None and not isinstance(workspace, AgentWorkspace):
             raise ValueError("workspace must be an AgentWorkspace")
+        if mode not in {"question", "write"}:
+            raise ValueError("Invalid workspace mode")
+        if mode == "question":
+            if workspace is None:
+                raise ValueError("Version questions require a workspace")
+
+            async def answer(client):
+                version = await client.get_article_version(workspace.article_id, workspace.version_no, access_token=access_token)
+                hits = await (self.rag_service or get_rag_service()).search_article_version(
+                    workspace.article_id, workspace.version_no, message, access_token=access_token, blog_client=client)
+                evidence = [KnowledgeHit(**hit.model_dump(), title=version.title) for hit in hits]
+                result = await grounded_answer(message, evidence, model_factory=lambda: self._model,
+                    scope=f"当前文章 #{workspace.article_id} 的 ArticleVersion V{workspace.version_no} 中")
+                return AgentResponse(**result.model_dump())
+
+            if blog_client is not None:
+                return await answer(blog_client)
+            async with BlogClient(self.settings) as client:
+                return await answer(client)
         if self._proposal_graph is None:
             self._proposal_graph = build_graph(self._model, tools=PROPOSAL_TOOLS, system_prompt=PROPOSAL_SYSTEM_PROMPT)
         capture = ProposalCapture()

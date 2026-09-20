@@ -19,6 +19,8 @@ from app.clients.models import (
     ArticleVersionDiff,
     ArticleVersionChunks,
     ArticleVersion,
+    PublishedKnowledgeRecord,
+    PositiveInt,
     CreateDraftInput,
     UpdateDraftInput,
 )
@@ -41,6 +43,18 @@ class _VersionChunksEnvelope(BaseModel):
 
 class _ArticleVersionEnvelope(BaseModel):
     data: ArticleVersion
+
+
+class _PublishedKnowledgeEnvelope(BaseModel):
+    data: list[PublishedKnowledgeRecord]
+
+
+class _AuthenticatedUser(BaseModel):
+    id: PositiveInt
+
+
+class _AuthenticatedUserEnvelope(BaseModel):
+    data: _AuthenticatedUser
 
 
 class BlogClient:
@@ -75,6 +89,24 @@ class BlogClient:
         result = await self._request(
             "GET", self._article_path(article_id), access_token, _ArticleEnvelope
         )
+        return result.data
+
+    async def get_authenticated_user_id(self, *, access_token: str) -> int:
+        result = await self._request("GET", "/api/v1/user/profile", access_token, _AuthenticatedUserEnvelope)
+        return result.data.id
+
+    async def get_published_knowledge(self, *, access_token: str, article_id: int | None = None) -> list[PublishedKnowledgeRecord]:
+        path = "/api/v1/agent/published-knowledge"
+        if article_id is not None:
+            self._require_positive_int(article_id, "article_id")
+            path += f"/{article_id}"
+        result = await self._request("GET", path, access_token, _PublishedKnowledgeEnvelope)
+        ids = [record.article_id for record in result.data]
+        if len(ids) != len(set(ids)) or (article_id is not None and any(id != article_id for id in ids)):
+            raise BlogBackendError("Go returned invalid published identities", method="GET", path=path)
+        for record in result.data:
+            if [chunk.index for chunk in record.chunks] != list(range(len(record.chunks))):
+                raise BlogBackendError("Go returned invalid published chunks", method="GET", path=path)
         return result.data
 
     async def list_my_articles(

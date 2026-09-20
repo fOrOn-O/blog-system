@@ -5,8 +5,10 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.chat import router as chat_router
+from app.api.knowledge import router as knowledge_router
 from app.core.config import get_settings
 from app.core.rag import close_rag_service
+from app.core.rag import close_published_service
 
 settings = get_settings()
 logging.basicConfig(
@@ -19,9 +21,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await close_rag_service()
+        try:
+            await close_rag_service()
+        finally:
+            await close_published_service()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(chat_router)
+app.include_router(knowledge_router)

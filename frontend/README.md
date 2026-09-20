@@ -67,3 +67,26 @@ Go 使用测试内存 SQLite 和测试账号，不读取本地/生产数据库�
 测试不要求 Docker、Groq、E5 或 Qdrant。结果写入仓库忽略的 `tmp/task13-playwright`，不保存 JWT trace。
 
 延后实测清单：Real Groq writing、Real E5、Real Qdrant、Real semantic retrieval、Real TiDB concurrent Apply。
+
+## Task 13.5：站内知识与版本问答
+
+新增登录后可访问的 `/knowledge`，面向全站当前已发布文章，不是“我的知识库”。
+问题通过现有 Agent base URL 请求 `/knowledge/chat`，仅发送 query 和认证拦截器注入的 Bearer JWT。
+Python 入口按 Go 验证后的用户 ID 进行服务端限流，默认 Agent Chat / Knowledge / HTTP 同步共用 10 次/分钟；
+超限返回 429，前端只负责显示错误，不自动重试。health 不受影响。
+页面提供 loading、错误、无依据、纯文本答案和结构化来源；来源链接由数值 article_id 生成，
+标题/heading/答案不使用 v-html。每次提问独立，不发送聊天历史。
+
+ArticleEdit 助手默认“版本问答”，由 Python 强制先检索绑定的已保存版本；
+选择“写作提案”后才进入原有全文编辑提案流程，Preview/Apply 状态机不变。
+请求只投影 message/mode/workspace，不提交未保存 HTML 或用户自填身份。
+
+发布类操作、归档及删除在 Go 成功后独立发起 `/knowledge/sync/:id`；
+同步失败不拒绝已成功的业务请求，导航栏下显示重试入口。关闭页面可能中断同步，
+外部直接调用 Go 也不会经过前端 hook，需显式 Python reconcile；不声称同步是可靠消息投递。
+草稿保存、提案生成、Preview、Apply 不触发知识同步。
+
+生产构建仍只需原有 Go/Agent base URL 和代理，不能将 Qdrant/Groq 密钥写入 VITE 环境变量。
+先 Review，再部署 Go 新 source API、Python Knowledge API 和前端；production full E2E 尚须单独验证。
+本地浏览器 E2E 新增真实链路的跨文章来源、公开版本切换、归档过滤、exact 问答和同步失败隔离；
+RAG 使用 FakeEmbedding + 内存 Qdrant，不依赖真实模型或云服务。
