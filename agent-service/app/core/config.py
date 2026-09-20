@@ -31,11 +31,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_embedding_profile(self):
-        if self.embedding_provider == "local_e5" and (
+        if self.embedding_provider in {"local_e5", "qdrant_cloud"} and (
             self.embedding_model != "intfloat/multilingual-e5-small"
             or self.embedding_dimension != 384 or self.qdrant_distance != "Cosine"
         ):
-            raise ValueError("local_e5 requires intfloat/multilingual-e5-small, 384 dimensions and Cosine")
+            raise ValueError("E5 profiles require intfloat/multilingual-e5-small, 384 dimensions and Cosine")
+        if self.embedding_provider == "qdrant_cloud" and (
+            self.qdrant_url.scheme != "https" or not self.qdrant_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("qdrant_cloud requires an HTTPS QDRANT_URL and nonempty QDRANT_API_KEY")
         if self.qdrant_api_key.get_secret_value() and self.qdrant_url.scheme != "https":
             raise ValueError("Authenticated Qdrant requires HTTPS")
         return self

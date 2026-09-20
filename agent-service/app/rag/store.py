@@ -3,7 +3,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import AsyncQdrantClient, models
 
-from app.clients.models import ArticleVersionChunks
+from app.clients.models import ArticleVersionChunks, ArticleChunk
 from app.core.config import Settings
 from app.rag.embedding import validate_vectors
 from app.rag.errors import RagConfigurationError, RagError
@@ -19,6 +19,14 @@ def version_filter(user_id: int, article_id: int, version_no: int) -> models.Fil
         models.FieldCondition(key=key, match=models.MatchValue(value=value))
         for key, value in (("user_id", user_id), ("article_id", article_id), ("version_no", version_no))
     ])
+
+
+def chunk_payload(source: ArticleVersionChunks, chunk: ArticleChunk) -> dict:
+    return {
+        "user_id": source.user_id, "article_id": source.article_id, "version_no": source.version_no,
+        "chunk_index": chunk.index,
+        "heading_path": [h.model_dump(mode="json") for h in chunk.heading_path], "text": chunk.text,
+    }
 
 
 class QdrantChunkStore:
@@ -63,11 +71,7 @@ class QdrantChunkStore:
         validate_vectors(vectors, len(source.chunks), self.dimension)
         points = [models.PointStruct(
             id=point_id(source.article_id, source.version_no, chunk.index), vector=vector,
-            payload={
-                "user_id": source.user_id, "article_id": source.article_id, "version_no": source.version_no,
-                "chunk_index": chunk.index,
-                "heading_path": [h.model_dump(mode="json") for h in chunk.heading_path], "text": chunk.text,
-            },
+            payload=chunk_payload(source, chunk),
         ) for chunk, vector in zip(source.chunks, vectors, strict=True)]
         try:
             async with self._write_lock:
@@ -86,11 +90,17 @@ class QdrantChunkStore:
 
     async def search(self, user_id: int, article_id: int, version_no: int, vector: list[float], top_k: int) -> list[RetrievedChunk]:
         validate_vectors([vector], 1, self.dimension)
+        return await self._search(user_id, article_id, version_no, vector, top_k)
+
+    async def search_document(self, user_id: int, article_id: int, version_no: int, document: models.Document, top_k: int) -> list[RetrievedChunk]:
+        return await self._search(user_id, article_id, version_no, document, top_k)
+
+    async def _search(self, user_id: int, article_id: int, version_no: int, query: list[float] | models.Document, top_k: int) -> list[RetrievedChunk]:
         try:
             if not await self.ensure_collection(create=False):
                 return []
             result = await self.client.query_points(
-                self.collection, query=vector, query_filter=version_filter(user_id, article_id, version_no),
+                self.collection, query=query, query_filter=version_filter(user_id, article_id, version_no),
                 limit=top_k, with_payload=True, with_vectors=False,
             )
             chunks = []

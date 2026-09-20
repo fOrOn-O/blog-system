@@ -1,31 +1,20 @@
-import asyncio
-
 from app.clients.blog import BlogClient
-from app.rag.embedding import EmbeddingProvider, validate_vectors
-from app.rag.errors import RagConfigurationError, RagError
+from app.rag.backend import RetrievalBackend
+from app.rag.errors import RagError
 from app.rag.models import RetrievedChunk
-from app.rag.store import QdrantChunkStore
 
 
 class ArticleRagService:
-    def __init__(self, embedding: EmbeddingProvider, store: QdrantChunkStore, *, top_k: int):
-        if embedding.dimension != store.dimension or embedding.profile != store.profile:
-            raise RagConfigurationError("Embedding provider and vector store profiles differ")
-        self.embedding = embedding
-        self.store = store
+    def __init__(self, backend: RetrievalBackend, *, top_k: int):
+        self.backend = backend
         self.top_k = top_k
+
+    async def aclose(self) -> None:
+        await self.backend.aclose()
 
     async def index_article_version(self, article_id: int, version_no: int, *, access_token: str, blog_client: BlogClient) -> int:
         source = await blog_client.get_version_chunks(article_id, version_no, access_token=access_token)
-        # CPU 推理在线程执行；全部成功并验证后才允许替换索引。
-        try:
-            vectors = await asyncio.to_thread(self.embedding.embed_documents, [c.text for c in source.chunks])
-            validate_vectors(vectors, len(source.chunks), self.embedding.dimension)
-        except RagError:
-            raise
-        except Exception:
-            raise RagError("Embedding failed; existing index was not replaced") from None
-        await self.store.replace(source, vectors)
+        await self.backend.replace(source)
         return len(source.chunks)
 
     async def search_article_version(self, article_id: int, version_no: int, query: str, *, access_token: str, blog_client: BlogClient) -> list[RetrievedChunk]:
@@ -35,21 +24,20 @@ class ArticleRagService:
         source = await blog_client.get_version_chunks(article_id, version_no, access_token=access_token)
         if not source.chunks:
             return []
-        try:
-            vector = await asyncio.to_thread(self.embedding.embed_query, query)
-        except RagError:
-            raise
-        except Exception:
-            raise RagError("Query embedding failed") from None
-        found = await self.store.search(source.user_id, source.article_id, source.version_no, vector, self.top_k)
+        candidate_k = min(self.top_k * 3, 100)
+        found = await self.backend.search(source, query, candidate_k)
         canonical = {c.index: c for c in source.chunks}
         result = []
         seen = set()
         for hit in found:
+            if hit.article_id != source.article_id or hit.version_no != source.version_no:
+                raise RagError("Retrieval returned a mismatched scope")
             current = canonical.get(hit.chunk_index)
             # Qdrant 仅决定检索排序；内容必须仍与 Go 一致，失效索引不能成为事实来源。
             if current is None or current.text != hit.text or current.heading_path != hit.heading_path or hit.chunk_index in seen:
                 continue
             seen.add(hit.chunk_index)
             result.append(hit.model_copy(update={"text": current.text, "heading_path": current.heading_path}))
+            if len(result) == self.top_k:
+                break
         return result

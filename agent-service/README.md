@@ -23,7 +23,7 @@ uv export --locked --extra local --format requirements-txt --no-hashes |
 FastAPI、Uvicorn、pydantic-settings、Pydantic 和 httpx 是运行依赖；pytest 用于测试。
 Agent 使用 langgraph、langchain-core 和 langchain-groq。
 Qdrant Client 是运行依赖；sentence-transformers 属于可选的 `local` extra，
-只在本地 E5 环境安装。远程 embedding 环境可省略 `--extra local`，不因此安装 PyTorch 和模型运行库。
+只在本地 E5 环境安装。Qdrant Cloud Inference / Render 环境不要安装 `--extra local`，不安装 PyTorch 和模型运行库。
 Hatchling 仅用于构建 Python 包。依赖版本记录在 `uv.lock` 中。
 锁文件中的 packaging 和 tenacity 保持与本机已有 Streamlit 的版本约束兼容。
 
@@ -239,14 +239,14 @@ Diff 文本是数据，展示方应按纯文本转义，不将其作为 HTML 执
 既有 409 映射保持不变，Diff 本身不执行工作版本冲突检查，不更新任何业务数据。
 完整 Go API 响应示例与算法说明见 [后端 README](../backend/README.md)。
 
-## Task 10：指定文章版本的 Dense RAG
+## Task 10 / 13.5-A：指定文章版本的 Dense RAG
 
 ```text
 显式 index → BlogClient → Go JWT / 所有权校验 → ArticleVersion → Task 09 ChunkHTML / RenderText
-          → EmbeddingProvider.embed_documents → Qdrant 按版本替换索引
+          → RetrievalBackend.replace → 本地 E5 或 Qdrant Cloud Inference → Qdrant
 
 用户问题 → 现有 LangGraph → search_article_version → Go 再次校验所有权及版本
-         → EmbeddingProvider.embed_query → Qdrant Top-K → 校对 Go 原文
+         → RetrievalBackend.search → Qdrant 候选集 → 校对 Go 原文 → 去重 → 最多 Top-K
          → RetrievedChunk → 按检索顺序组装上下文 → Tool Result → 同一个模型生成答案
 ```
 
@@ -315,8 +315,12 @@ FastAPI `/health` 和普通单元测试均不下载或加载真实模型；CLI �
 
 ### Profile 隔离、点模型与重建
 
-`EmbeddingProvider` 协议位于 `app/rag/embedding.py`，提供 `dimension`、`profile`、
-`embed_documents` 和 `embed_query`。索引和检索只依赖该协议，不依赖 SentenceTransformer。
+`RetrievalBackend` 协议位于 `app/rag/backend.py`，提供异步 `replace(source)`、
+`search(source, query, limit)`、`aclose()`。ArticleRagService 只负责 Go 授权、canonical 分块校验与结果截取，
+不关心向量在哪里计算。`LocalRetrievalBackend` 组合既有 EmbeddingProvider 与 QdrantChunkStore；
+`QdrantCloudRetrievalBackend` 通过 Document 直接请求云端推理，不伪造返回 float[] 的远程 provider。
+本地 `EmbeddingProvider` 协议仍位于 `app/rag/embedding.py`，提供 `dimension`、`profile`、
+`embed_documents` 和 `embed_query`。
 本地实现使用 `passage: <chunk text>` 和 `query: <question>`，并归一化向量；
 前缀只存在于推理输入，原文、Go Chunk 和 Qdrant payload 都不会被添加前缀。
 
@@ -328,15 +332,19 @@ FastAPI `/health` 和普通单元测试均不下载或加载真实模型；CLI �
 
 每次读写都核对实际 size、distance 和完整 profile。即使维度相同，只要模型或 provider 不同就拒绝使用；
 现有无 profile 的集合也不会被自动认领或删除。更换模型时必须使用新集合、重新显式索引。
-Provider 和 Store 在组装服务时也必须具有完全一致的 profile；未知 provider 明确报错，不回退到本地 E5。
+本地 Provider 和 Store 在组装 backend 时也必须具有完全一致的 profile；未知 provider 明确报错，不回退到本地 E5。
+`local_e5` 与 `qdrant_cloud` 即使模型、维度、距离相同，仍属于不同 profile，不能自动共用已有集合。
 
 一个 Go Chunk 对应一个 Point。ID 为固定 UUID namespace 下
 `blog-system/article/{article_id}/version/{version_no}/chunk/{chunk_index}` 的 UUIDv5。
 payload 仅包含：`user_id`、`article_id`、`version_no`、`chunk_index`、`heading_path`、`text`；
 前三个字段建立整数 payload index。没有 HTML DOM，也不保存完整 Blocks。
-检索与删除均使用 `user_id AND article_id AND version_no`，不进行跨文章检索。
+检索和旧点枚举均限定 `user_id AND article_id AND version_no`，不进行跨文章检索。
+内部候选数量为 `min(RAG_TOP_K * 3, 100)`；按 Qdrant 返回的相似度顺序校验 chunk_index、text、heading_path，
+跳过 stale/mismatched 内容并去重，最终最多返回 RAG_TOP_K。身份或 point ID 异常直接抛安全 RagError。
+候选过取能缓解 stale 点占位，但有限候选集不保证过滤后一定凑满 Top-K。
 
-重建顺序：获取所有 Go chunks → 生成所有向量 → 校验数量、维度、有限非零值 →
+本地重建顺序：获取所有 Go chunks → 生成所有向量 → 校验数量、维度、有限非零值 →
 校验集合 profile → 删除该用户/文章/版本旧点 → 批量 upsert 新点。
 因此旧 chunk 3 在新结果仅有 0～2 时会被清除，空结果会清空该版本索引，重复索引不会增加逻辑点数。
 embedding 失败发生在删除前；删除成功而 upsert 失败时可能暂时缺少索引，显式重试可修复。
@@ -344,19 +352,63 @@ embedding 失败发生在删除前；删除成功而 upsert 失败时可能暂�
 
 ### Render / 生产配置边界
 
-Render 应通过环境变量配置 `APP_ENV=production`、外部 `QDRANT_URL` / `QDRANT_API_KEY`，
-以及一整组远程 provider / model / dimension / distance / collection 配置。
-不能只改模型名称却继续使用旧集合，也不应将 Qdrant 数据保存到 Render 临时磁盘。
+Task 13.5-A 增加正式 `qdrant_cloud` profile，客户端通过集中配置创建并缓存：
+`AsyncQdrantClient(..., cloud_inference=True, check_compatibility=False)`。
+本地 profile 显式使用 `cloud_inference=False`，保留本地 E5 + Docker Qdrant；生产使用 Cloud Inference + 外部持久化 Qdrant Cloud。
 
-**本任务只实现本地 `LocalE5EmbeddingProvider`，没有实现任何真实远程 embedding API 适配器。**
-生产环境不会自动启动本地模型：`APP_ENV=production` 下的 `local_e5` 会明确报错；
-未实现的远程 provider 同样明确报错。`/health` 仍只是进程存活检查，不代表 RAG readiness。
+在 Render 配置以下值（URL 与 Key 仅示例，不要写入 Git）：
 
-真正部署前仍需选择远程服务，编写一个实现相同 `EmbeddingProvider` 协议的 HTTP adapter，
-在 `create_embedding_provider` 注册并加入该服务所需的集中配置、凭据和契约测试。
-索引、检索和 LangGraph 逻辑无需重写。随后配置外部持久化 Qdrant、Go 服务地址及密钥，
-验证实际 embedding profile、网络连通性、权限和生产容量，并显式重建新集合。
-如远程服务运行同一 E5 模型，前缀规则也应由该 adapter 负责，不放到通用索引逻辑中。
+```dotenv
+APP_ENV=production
+EMBEDDING_PROVIDER=qdrant_cloud
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+EMBEDDING_DIMENSION=384
+QDRANT_DISTANCE=Cosine
+QDRANT_COLLECTION=article_chunks_e5_cloud_v1
+QDRANT_URL=https://YOUR-CLUSTER.cloud.qdrant.io
+QDRANT_API_KEY=<render secret>
+```
+
+Cloud profile 强制上述模型、384 维、Cosine，以及 HTTPS URL 和非空 Key。
+仍需保持现有 Go `BLOG_BACKEND_URL`、`GROQ_API_KEY`、`LLM_MODEL` 配置。
+本地也允许选择 qdrant_cloud 做后续真实 smoke test，不强制 APP_ENV=production。
+`production` / `prod` 下的 local_e5 在工厂创建时拒绝；未知 provider 同样拒绝，绝不 fallback。
+
+生产安装使用 `uv sync --locked --no-dev`，不要加 `--extra local`，不要安装 fastembed、sentence-transformers 或 PyTorch。
+普通 runtime 依赖不变，qdrant-client 保持既有版本范围。Cloud profile 执行 `warm-model` 会明确拒绝，
+它不拥有本地模型；`index` 和 `ask` CLI 的调用方式、隐藏 JWT 输入保持不变。
+
+Cloud 写入使用 `models.Document(text=chunk.text, model=settings.embedding_model)`；
+查询使用 `models.Document(text=query, model=settings.embedding_model)`，**不手动添加 passage/query 前缀**。
+Cloud E5 推理路径负责所需前缀；原文 payload 与 Go 保持一致。
+Document 的 SDK 用法见 [Qdrant Cloud 官方说明](https://qdrant.tech/documentation/cloud/quickstart-cloud/)。
+
+Cloud 重建顺序：
+
+```text
+Go 校验并获取完整版本 chunks
+→ 校验/创建 collection 及 profile、整数 payload indexes
+→ 按三重身份过滤，完整 scroll 分页枚举 existing IDs
+→ 计算 deterministic expected IDs
+→ 分批 upsert Document（每批 wait=True）
+→ 分批 retrieve 全部 expected IDs（不下载 vectors）
+→ 检查每批数量、ID 集合及完整 payload 与 Go 一致
+→ 精确删除 existing - expected 的 stale IDs（每批 wait=True）
+```
+
+任何 upsert/inference 或验证失败都不执行 stale delete，只抛安全 RagError，不返回 SDK、网络或密钥原文。
+空 chunks 不调用推理，校验集合后仅清理该版本已枚举的点。查询不创建集合；只有显式 index 才创建缺失集合。
+不兼容集合会明确报 RagConfigurationError，不删除、重建或自动认领。
+
+这不是跨请求原子事务：前几批 upsert 可能已完成，失败不会回滚已写的点；旧 stale 点保留到后续显式 index 成功。
+全部验证完成后若 stale delete 失败，也可能只删除了部分 stale 点，可再次显式 index 恢复。
+替换仍只有单进程互斥，没有跨实例写入锁，不自动重试写请求。
+检索始终先通过 Go 校验权限/版本，再按 canonical chunks 过滤，不能把未校验的旧点当作事实。
+
+Publish 不自动 index；不增加跨版本、Published Knowledge Index 或新页面。
+`/health` 只代表进程存活，不代表 Cloud 推理/检索就绪。
+代码和普通测试完成不代表 production RAG 已上线；仍须配置 Render secrets、部署，
+然后使用本人真实 JWT 和已确认的 ArticleVersion 显式 index/search 做 Cloud smoke test。
 
 ### 测试与当前限制
 
@@ -367,7 +419,8 @@ Render 应通过环境变量配置 `APP_ENV=production`、外部 `QDRANT_URL` / 
 新增测试使用 FakeEmbedding、FakeModel、httpx.MockTransport 和 Qdrant SDK 内存模式；
 覆盖前缀、单次加载、profile/实际集合规格校验、点身份、重建、失败保护、三重过滤、Top-K、
 Go 原文校对及真实 LangGraph/ToolNode/JWT Context 回路。内存模式不实际建立 payload 索引，
-测试另外校验建索引请求；不能据此宣称已验证 Docker 网络或真实模型检索质量。
+测试另外校验建索引请求。Cloud 测试模拟分页/写入/验证/失败，并使用真实 SDK + Mock HTTP 校验 Document 序列化和禁用本地推理。
+测试不下载模型、不调用真实 Cloud，也不能据此宣称已验证 Docker/Cloud 网络或真实模型检索质量。
 
 当前只支持单个指定文章版本的 Dense Top-K。未索引时返回空结果，不自动建索引；
 空结果不证明该版本没有相关内容，Agent 应说明没有可用检索依据。

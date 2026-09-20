@@ -15,6 +15,7 @@ from app.clients.errors import (
     BlogBackendUnavailableError, BlogRequestError, VersionConflictError,
 )
 from app.core.config import Settings
+from app.rag.backend import LocalRetrievalBackend
 from app.rag.service import ArticleRagService
 from app.rag.store import QdrantChunkStore
 from test_agent import ScriptedModel, assert_no_token_in_model_inputs, tool_call
@@ -94,7 +95,7 @@ async def test_chunks_contract_and_transport_errors(invalid):
 async def test_real_graph_retrieval_context_and_concurrent_runtime_jwt(monkeypatch):
     settings = Settings(_env_file=None, rag_top_k=2)
     store = QdrantChunkStore(AsyncQdrantClient(":memory:"), settings)
-    service = ArticleRagService(FakeEmbedding(settings), store, top_k=settings.rag_top_k)
+    service = ArticleRagService(LocalRetrievalBackend(FakeEmbedding(settings), store), top_k=settings.rag_top_k)
     requests = []
 
     async def handler(request):

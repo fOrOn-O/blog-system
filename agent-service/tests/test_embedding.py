@@ -120,9 +120,9 @@ async def test_centralized_clients_cached_and_closed(monkeypatch):
     try:
         first = rag.get_rag_service()
         assert first is rag.get_rag_service()
-        assert first.embedding is rag.get_embedding_provider()
-        assert first.embedding._model is None
-        constructor.assert_called_once_with(url="https://vector.example.test/", timeout=10, api_key="fake-key", check_compatibility=False)
+        assert first.backend.embedding is rag.get_embedding_provider()
+        assert first.backend.embedding._model is None
+        constructor.assert_called_once_with(url="https://vector.example.test/", timeout=10, api_key="fake-key", check_compatibility=False, cloud_inference=False)
         await rag.close_rag_service()
         client.close.assert_awaited_once()
         assert rag.get_rag_service.cache_info().currsize == 0
