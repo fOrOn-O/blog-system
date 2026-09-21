@@ -13,17 +13,17 @@ export function searchArticles(params) {
 }
 
 // 获取文章详情
-export function getArticle(id) {
-  return api.get(`/articles/${id}`)
+export function getArticle(id, options = {}) {
+  return api.get(`/articles/${id}`, options)
 }
 
 // 作者读取最新工作版本，不增加浏览量。
-export function getOwnedArticle(id) {
-  return api.get(`/user/articles/${id}`)
+export function getOwnedArticle(id, options = {}) {
+  return api.get(`/user/articles/${id}`, options)
 }
 
-export const getArticleVersions = (id, page = 1) => api.get(`/user/articles/${id}/versions`, { params: { page, limit: 20 } })
-export const getArticleVersion = (id, version) => api.get(`/agent/articles/${id}/versions/${version}`)
+export const getArticleVersions = (id, page = 1, options = {}) => api.get(`/user/articles/${id}/versions`, { ...options, params: { page, limit: 20 } })
+export const getArticleVersion = (id, version, options = {}) => api.get(`/agent/articles/${id}/versions/${version}`, options)
 export const getVersionDiff = (id, from, to) => api.get(`/agent/articles/${id}/diff`, { params: { from_version: from, to_version: to } })
 export const createDraft = data => api.post('/articles/drafts', data)
 export const saveDraft = (id, data) => api.put(`/articles/${id}/draft`, data)

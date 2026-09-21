@@ -3,6 +3,7 @@ import { getToken, clearAuth } from '@/utils/auth'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { getApiErrorFeedback } from './error-feedback'
+import { assistantErrorMessage } from './assistant-error'
 
 // 创建 Axios 实例
 const api = axios.create({
@@ -42,7 +43,9 @@ api.interceptors.response.use(
         url: error.config?.url
       })
 
-      ElMessage.error(feedback.message)
+      const assistantRequest = /\/(chat|knowledge\/sync\/\d+)$/.test((error.config?.url || '').split('?')[0])
+      // 文章加载页面可接管错误展示；登录清理与跳转仍执行，Promise 仍 reject。
+      if (error.config?.notifyError !== false) ElMessage.error(assistantRequest ? assistantErrorMessage(error) : feedback.message)
 
       if (feedback.clearSession) {
         clearAuth()
@@ -55,9 +58,9 @@ api.interceptors.response.use(
         })
       }
     } else if (error.request) {
-      ElMessage.error('网络错误，请检查网络连接')
+      if (error.config?.notifyError !== false) ElMessage.error('网络错误，请检查网络连接')
     } else {
-      ElMessage.error('请求配置错误')
+      if (error.config?.notifyError !== false) ElMessage.error('请求配置错误')
     }
 
     return Promise.reject(error)

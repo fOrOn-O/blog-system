@@ -205,7 +205,7 @@ test('助手请求失败恢复发送状态，401 沿用前端登录失效流程'
   await page.route('**/chat', route => route.fulfill({ status: 502, json: { detail: '助手暂时不可用' } }))
   await page.getByLabel('向助手提问').fill('你好')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.getByText('助手请求失败，请检查登录或稍后重新发送。')).toBeVisible()
+  await expect(page.locator('.agent-panel [role=alert]')).toHaveText('助手服务暂时失败，请稍后重试。')
   await page.getByLabel('向助手提问').fill('重新提问')
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled()
   await page.unroute('**/chat')
@@ -309,7 +309,7 @@ test('Apply 已提交但历史刷新失败：清除提案并锁定编辑，重�
   const applies = []
   page.on('request', r => { if (r.url().endsWith('/apply')) applies.push(r) })
   await approve(page)
-  await expect(page.getByText(/文章或版本刷新失败，请重试/)).toBeVisible()
+  await expect(page.getByText(/文章或版本加载失败，请重试/)).toBeVisible()
   await expect(page.getByRole('region', { name: '编辑提案' })).toHaveCount(0)
   await expect(page.getByRole('region', { name: '正文差异' })).toHaveCount(0)
   await expect(page.getByTestId('agent-workspace')).toContainText('V1')

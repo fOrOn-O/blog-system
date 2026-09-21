@@ -98,26 +98,26 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
         <nav class="nav-links" aria-label="主导航">
           <button type="button" @click="goToHomeSection('#featured')">发现</button>
           <button type="button" @click="goToHomeSection('#latest-notes')">最新文章</button>
-          <button type="button" @click="router.push('/knowledge')">站内知识</button>
+          <button type="button" @click="router.push('/knowledge')">知识小助手</button>
         </nav>
 
         <div class="nav-tools">
-          <div class="search-wrapper" :class="{ focused: searchFocused }">
+          <form class="search-wrapper" role="search" :class="{ focused: searchFocused }" @submit.prevent="handleSearch">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <circle cx="11" cy="11" r="6.5" />
               <path d="m16 16 4.2 4.2" />
             </svg>
             <input
               v-model="searchKeyword"
-              type="search"
+              type="text"
               aria-label="搜索文章"
               placeholder="搜索灵感、技术与想法"
               @focus="searchFocused = true"
               @blur="searchFocused = false"
-              @keyup.enter="handleSearch"
             />
             <button v-if="searchKeyword" class="clear-btn" type="button" aria-label="清空搜索" @click="searchKeyword = ''">×</button>
-          </div>
+            <button class="search-submit" type="submit" :disabled="!searchKeyword.trim()">搜索</button>
+          </form>
 
           <template v-if="isAuthenticated">
             <button class="btn-write" type="button" @click="router.push('/article/edit')">
@@ -306,7 +306,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .search-wrapper {
-  width: min(24vw, 250px);
+  width: min(28vw, 320px);
   height: 37px;
   padding: 0 10px;
   gap: 8px;
@@ -337,6 +337,9 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     box-shadow: 0 0 0 3px rgba(215, 164, 98, 0.14);
   }
 }
+
+.search-submit { flex-shrink: 0; padding: 4px 8px; border: 0; border-radius: 12px; background: #e8eef4; color: #17324d; cursor: pointer; }
+.search-submit:disabled { opacity: .5; cursor: default; }
 
 .nav--home:not(.is-scrolled) .search-wrapper {
   border-color: rgba(255, 255, 255, 0.22);
@@ -477,15 +480,18 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   .nav-inner { gap: 14px; }
   .nav-links { display: none; }
   .nav-tools { margin-left: auto; }
-  .search-wrapper { width: 39px; padding: 0; justify-content: center; background: transparent; border-color: transparent; }
-  .search-wrapper input, .search-wrapper .clear-btn { display: none; }
-  .search-wrapper.focused { width: min(45vw, 260px); padding: 0 10px; justify-content: flex-start; }
-  .search-wrapper.focused input, .search-wrapper.focused .clear-btn { display: block; }
+  .nav-inner { flex-wrap: wrap; }
+  .nav-tools { min-width: 0; }
+  .search-wrapper, .search-wrapper.focused { width: min(42vw, 260px); padding: 0 8px; gap: 4px; }
   .btn-login { display: none; }
   .main--home { margin-top: -68px; }
 }
 
 @media (max-width: 540px) {
+  .nav, .nav-inner { height: auto; min-height: 68px; }
+  .nav-inner { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+  .nav-tools { flex: 1 1 100%; }
+  .search-wrapper, .search-wrapper.focused { flex: 1; width: auto; }
   .container { padding-left: 18px; padding-right: 18px; }
   .logo-copy small { display: none; }
   .logo-copy strong { font-size: 17px; }

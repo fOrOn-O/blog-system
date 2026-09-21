@@ -36,7 +36,9 @@ async def authenticated_blog(credentials: HTTPAuthorizationCredentials | None = 
         raise HTTPException(401, "登录已过期") from None
     except AuthorizationError:
         raise HTTPException(403, "无权访问") from None
-    except (BlogClientError, RagError, ModelConfigurationError, AgentExecutionError):
+    except AgentExecutionError as error:
+        raise HTTPException(error.status_code, {"code": error.code, "message": "助手暂不可用，请稍后重试。"}) from None
+    except (BlogClientError, RagError, ModelConfigurationError):
         raise HTTPException(502, "知识服务暂不可用；同步失败可显式重试，业务发布状态不受影响") from None
 
 

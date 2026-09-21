@@ -9,6 +9,7 @@ from langgraph.runtime import Runtime
 
 from app.agent.context import AgentContext
 from app.agent.errors import AgentExecutionError
+from app.agent.model_errors import model_failure
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools import AGENT_TOOLS, safe_tool_error
 
@@ -17,6 +18,10 @@ def build_graph(model: BaseChatModel, *, tools=AGENT_TOOLS, system_prompt: str =
     model_with_tools = model.bind_tools(list(tools))
 
     async def call_model(state: MessagesState, runtime: Runtime[AgentContext]) -> dict:
+        capture = runtime.context.proposal_capture
+        if capture is not None and capture.proposal is not None:
+            # 完整提案已校验并捕获，结束本次生成；不再将正文发回模型润色确认语。
+            return {"messages": [AIMessage(content="已生成完整编辑提案，尚未保存。请先预览差异，再由你确认是否应用；不会自动发布。") ]}
         instructions = [SystemMessage(content=system_prompt)]
         if runtime.context.proposal_capture is not None:
             workspace_note = (
@@ -25,9 +30,14 @@ def build_graph(model: BaseChatModel, *, tools=AGENT_TOOLS, system_prompt: str =
                 "当前没有活动文章工作区；可以正常问答，但不能编辑或提交文章提案。"
             )
             instructions.append(SystemMessage(content=workspace_note))
-        reply = await model_with_tools.ainvoke([*instructions, *state["messages"]])
+        try:
+            reply = await model_with_tools.ainvoke([*instructions, *state["messages"]])
+        except Exception as error:
+            raise model_failure(error) from None
         if not isinstance(reply, AIMessage):
             raise AgentExecutionError("Model returned an invalid agent response")
+        if reply.invalid_tool_calls or reply.response_metadata.get("finish_reason") == "length":
+            raise AgentExecutionError(code="model_output_invalid")
         return {"messages": [reply]}
 
     def should_continue(state: MessagesState) -> Literal["tools", "__end__"]:

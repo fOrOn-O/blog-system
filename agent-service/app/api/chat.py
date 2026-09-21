@@ -50,13 +50,18 @@ async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials |
             limit_user(user_id)
             # 工作区由应用选择，但仍须经 Go 校验。模型不能在工具参数中重新指定工作区。
             await blog.get_article_version(request.workspace.article_id, request.workspace.version_no, access_token=token)
-            return await factory().run_with_response(request.message, access_token=token,
-                                                    workspace=request.workspace, blog_client=blog, mode=request.mode)
+            result = await factory().run_with_response(request.message, access_token=token,
+                                                       workspace=request.workspace, blog_client=blog, mode=request.mode)
+            if request.mode == "write" and result.proposal is None:
+                raise AgentExecutionError(code="proposal_not_created")
+            return result
     except AuthenticationError:
         raise HTTPException(401, "登录已过期") from None
     except AuthorizationError:
         raise HTTPException(403, "无权访问该文章") from None
     except ArticleNotFoundError:
         raise HTTPException(404, "文章或版本不存在") from None
-    except (BlogClientError, AgentExecutionError, ModelConfigurationError, RagError):
+    except AgentExecutionError as error:
+        raise HTTPException(error.status_code, {"code": error.code, "message": "助手未完成请求，请稍后重试；文章未保存。"}) from None
+    except (BlogClientError, ModelConfigurationError, RagError):
         raise HTTPException(502, "助手暂时不可用，请稍后重试") from None

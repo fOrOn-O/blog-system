@@ -1,16 +1,38 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { chatWithWorkspace } from '@/api/agent'
 import { previewEditProposal, applyEditProposal } from '@/api/article'
 import ArticleDiff from './ArticleDiff.vue'
 import KnowledgeSources from './KnowledgeSources.vue'
+import AssistantMarkdown from './AssistantMarkdown.vue'
+import { assistantErrorMessage } from '@/api/assistant-error'
 
 const props = defineProps({ workspace: Object, currentVersion: Number, dirty: Boolean, disabled: Boolean })
 const emit = defineEmits(['applied', 'refresh', 'busy', 'conflict'])
 const message = ref('')
 const mode = ref('question')
 const messages = ref([])
+const expanded = ref(false)
+const messageList = ref(null)
+const composerInput = ref(null)
+let following = true
+function trackScroll() {
+  const el = messageList.value
+  if (el) following = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+}
+async function scrollMessages() {
+  await nextTick()
+  if (following && messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
+}
+function resizeInput() {
+  const el = composerInput.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+}
+watch(message, () => nextTick(resizeInput))
+onMounted(resizeInput)
 const sending = ref(false)
 const chatError = ref('')
 const proposal = ref(null)
@@ -18,6 +40,7 @@ const diff = ref(null)
 const phase = ref('NONE')
 const proposalError = ref('')
 const previewedProposal = ref(null)
+watch(() => [messages.value.length, sending.value, chatError.value, expanded.value], scrollMessages, { flush: 'post' })
 let revision = 0
 const matches = computed(() => proposal.value && props.workspace && proposal.value.article_id === props.workspace.article_id && proposal.value.base_version_no === props.workspace.version_no)
 const stale = computed(() => matches.value && props.currentVersion !== proposal.value.base_version_no)
@@ -60,8 +83,8 @@ async function send() {
       phase.value = 'GENERATED'
       revision++
     }
-  } catch {
-    chatError.value = '助手请求失败，请检查登录或稍后重新发送。'
+  } catch (error) {
+    chatError.value = assistantErrorMessage(error)
   } finally { sending.value = false }
 }
 
@@ -129,15 +152,16 @@ async function apply() {
 </script>
 
 <template>
-  <aside class="agent-panel card" aria-label="Agent 助手">
-    <header><h2>Agent 助手</h2><span v-if="workspace" data-testid="agent-workspace">文章 #{{ workspace.article_id }} · V{{ workspace.version_no }}</span></header>
+  <aside class="agent-panel card" :class="{ expanded }" aria-label="Agent 助手">
+    <header><h2>Agent 助手</h2><span v-if="workspace" data-testid="agent-workspace">文章 #{{ workspace.article_id }} · V{{ workspace.version_no }}</span><button type="button" class="expand-button" :aria-expanded="expanded" aria-controls="agent-messages" @click="expanded = !expanded">{{ expanded ? '收起助手' : '展开助手' }}</button></header>
     <p class="hint">基于已保存版本问答、检索或提出修改建议。应用前需要你预览并确认。</p>
     <p v-if="!workspace" class="hint">先保存文章草稿，再使用助手。</p>
     <p v-if="dirty" class="notice">有未保存修改，助手只读取已保存版本。请保存或撤销本地修改后再应用提案。</p>
-    <div class="messages" aria-live="polite">
+    <div id="agent-messages" ref="messageList" class="messages" aria-live="polite" tabindex="0" aria-label="助手消息" @scroll="trackScroll">
       <article v-for="(item, index) in messages" :key="index" class="chat-message">
         <small>{{ item.role }} · #{{ item.workspace.article_id }} / V{{ item.workspace.version_no }}</small>
-        <p>{{ item.text }}</p>
+        <AssistantMarkdown v-if="item.role === '助手'" :text="item.text" />
+        <p v-else>{{ item.text }}</p>
         <KnowledgeSources :sources="item.sources || []" :public-links="false" />
       </article>
       <p v-if="sending">助手正在处理…</p><p v-if="chatError" role="alert">{{ chatError }}</p>
@@ -160,7 +184,7 @@ async function apply() {
     <form class="composer" @submit.prevent="send">
       <label>助手模式 <select v-model="mode" aria-label="助手模式" :disabled="sending || !!proposal"><option value="question">版本问答</option><option value="write">写作提案</option></select></label>
       <label for="agent-message">向助手提问</label>
-      <textarea id="agent-message" v-model="message" rows="3" maxlength="12000" :disabled="sending || disabled || !!proposal || !workspace" :placeholder="mode === 'question' ? '询问当前已保存版本中的内容' : '例如：改写介绍段，保留其他内容'" />
+      <textarea id="agent-message" ref="composerInput" v-model="message" rows="3" maxlength="12000" :disabled="sending || disabled || !!proposal || !workspace" :placeholder="mode === 'question' ? '询问当前已保存版本中的内容' : '例如：改写介绍段，保留其他内容'" />
       <p v-if="proposal" class="hint">先处理或丢弃当前提案，再发送新消息。</p>
       <el-button native-type="submit" type="primary" :loading="sending" :disabled="sending || disabled || !!proposal || !workspace || !message.trim()">发送</el-button>
     </form>
@@ -175,13 +199,20 @@ small, .hint { color: var(--text-muted); font-size: 12px; }
 .hint { margin: 12px 0; line-height: 1.7; }
 .notice { padding: 10px; background: #fff6e5; color: #76511d; font-size: 13px; border-radius: 6px; }
 .messages { max-height: 280px; overflow: auto; }
+.expand-button { padding: 6px 10px; background: white; border: 1px solid #ccd5e0; border-radius: 6px; cursor: pointer; }
+.agent-panel.expanded { position: fixed; top: 10dvh; left: 4vw; right: 4vw; width: auto; max-width: 1100px; height: 80dvh; margin: 0 auto; box-sizing: border-box; z-index: 1100; display: flex; flex-direction: column; overflow: auto; box-shadow: 0 8px 48px #17324d33; }
+.expanded header { flex-shrink: 0; }
+.expanded .messages { flex: 1 1 auto; min-height: 100px; max-height: none; }
+.expanded .composer { flex-shrink: 0; margin-top: 10px; }
+.expanded .proposal { flex-shrink: 0; max-height: 24dvh; overflow: auto; }
 .chat-message { background: #f4f7fc; border-radius: 8px; padding: 10px; margin: 10px 0; }
 .chat-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin: 6px 0; }
 .proposal { margin: 16px 0; padding: 14px; border: 1px solid #b7ccec; border-radius: 8px; }
 .proposal ul { padding-left: 18px; font-size: 14px; line-height: 1.8; }
 .proposal-actions { display: flex; flex-wrap: wrap; gap: 8px; }.proposal-actions .el-button { margin: 0; }
 .composer { display: grid; gap: 10px; margin-top: 18px; }.composer label { font-size: 13px; }
-textarea { width: 100%; box-sizing: border-box; border: 1px solid #ccd5e0; border-radius: 6px; padding: 10px; resize: vertical; font: inherit; }
+textarea { width: 100%; min-height: 64px; max-height: min(140px, 18dvh); overflow-y: auto; box-sizing: border-box; border: 1px solid #ccd5e0; border-radius: 6px; padding: 10px; resize: none; font: inherit; }
 [role=alert] { color: #a83737; font-size: 13px; }
 @media (max-width: 1000px) { .agent-panel { position: static; } }
+@media (max-width: 600px) { .agent-panel.expanded { inset: 8px; height: calc(100dvh - 16px); padding: 12px; } .expanded header { position: sticky; top: 0; background: white; z-index: 1; } }
 </style>

@@ -9,6 +9,7 @@ from app.api import chat
 from app.agent.models import AgentResponse
 from app.clients.blog import BlogClient
 from app.core.config import Settings
+from app.agent.errors import AgentExecutionError
 from test_article_version_client import version_data
 
 
@@ -70,3 +71,22 @@ def test_chat_requires_auth_and_strict_workspace(setup_chat):
         assert client.post("/api/v1/agent/chat", json=invalid, headers={"Authorization": "Bearer test-token"}).status_code == 422
     factory.assert_not_called()
     assert not calls
+
+
+def test_explicit_writing_mode_cannot_silently_return_chat_instead_of_proposal(setup_chat):
+    client, _, _, _, _ = setup_chat
+    response = client.post("/api/v1/agent/chat", json={**body(), "mode": "write", "message": "帮我整体优化一下正文结构"},
+                           headers={"Authorization": "Bearer test-token"})
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "proposal_not_created"
+
+
+@pytest.mark.parametrize("code,status", [("model_rate_limited", 502), ("model_timeout", 504),
+    ("model_request_rejected", 502), ("model_output_invalid", 502)])
+def test_chat_returns_safe_machine_code_not_exception_details(setup_chat, code, status):
+    client, runner, _, _, _ = setup_chat
+    runner.run_with_response.side_effect = AgentExecutionError("private-key private-jwt traceback", code=code, status_code=status)
+    response = client.post("/api/v1/agent/chat", json=body(), headers={"Authorization": "Bearer test-token"})
+    assert response.status_code == status
+    assert response.json()["detail"]["code"] == code
+    assert "private" not in response.text and "traceback" not in response.text

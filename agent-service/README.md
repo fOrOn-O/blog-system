@@ -496,7 +496,8 @@ Python 不访问业务数据库，Qdrant、Task 10 的 RenderText 和 `get_artic
 `ProposalCapture` 每次运行重新创建，只暂存该次读取结果和第一份成功提案，不解析 LLM 最终自然语言中的 JSON，
 不跨请求保留记忆、不持久化。并发请求分别持有自己的工作区、JWT 和提案。
 同一模型轮次包含多次提交时，在 Go 校验前全部拒绝，返回 `multiple_proposal_submissions`，不按网络完成顺序挑选。
-跨轮次只接受第一份成功的单次提交，后续提交返回 `proposal_already_submitted`，不会覆盖已捕获提案。
+第一份成功的单次提交后，图直接返回固定的待预览/确认说明，不再调用模型，也不给下一轮覆盖提案的机会。
+工具自身仍保留 `proposal_already_submitted` 防御检查。
 
 新入口的白名单固定为四个既有只读工具（get/list/diff/search）和上述两个工作区工具。
 模型绑定和 ToolNode 均不注册 create_draft、update_draft、publish、archive 或索引操作，
@@ -545,7 +546,7 @@ Task 13 的预览渲染和批准交互必须把 HTML 视为不可信内容。
 返回 `answer`、`proposal`，以及问答用的 `has_evidence` / `sources`（写作模式为 null / 空数组）。
 请求不接受 user_id、token 或额外 workspace 身份字段。入口先通过 BlogClient 向 Go 验证
 指定历史版本的所有权和存在性，再创建/复用 Runner，将工作区和请求 JWT 注入运行上下文。
-Go 的 401/403/404 保持对应状态，模型/上游失败返回脱敏 502；消息为空或结构非法返回 422。
+Go 的 401/403/404 保持对应状态，模型/上游失败返回脱敏 502，模型超时返回 504；消息为空或结构非法返回 422。
 Task 13.5 中 HTTP 默认 `mode=question`，强制检索活动版本后回答；`mode=write` 保留完整快照与提案图。
 Runner/模型按进程延迟复用；每次请求仍是独立运行，无 checkpoint、对话持久化或记忆。
 
@@ -660,3 +661,15 @@ Review 通过后统一提交、推送、部署 Go/Python/Frontend，再进行 pr
 5. 验证无 evidence 分支、归档过滤与同步失败恢复；不打印 JWT/密钥。
 
 本次代码/本地测试完成不代表剩余 Task 13.5 已上线；production full E2E 完成前不封板。
+
+### Production E2E 写作回归修复
+
+完整 HTML 提案提交成功后直接返回程序构造的确认说明；不再将快照与提案发给模型生成结束语。
+这避免了第三次模型请求因限额、超时或格式错误而使已经生成的提案丢失。没有修改 timeout、token 限额或 SDK 零重试设置。
+HTTP 显式 `mode=write` 必须返回结构化 proposal；如果模型只给出普通聊天文本，则返回安全的 `proposal_not_created` 错误，不能冒充编辑成功。
+写作仍以完整历史快照为基础，成功仅表示生成提案；Preview、人工确认、Go Apply 均保留。
+
+模型异常使用受控 `detail.code`：`model_rate_limited` / `model_request_rejected` / `model_unavailable` / `model_output_invalid` 为 502，
+`model_timeout` 为 504。应用用户额度超限仍是 429 + `Retry-After`，不混淆模型配额与应用限流。
+模型请求故障日志只记录固定 stage/code，不输出异常原文、请求正文、JWT、密钥或 traceback。
+共享回复策略使用面向用户的产品语言，不主动展示内部工具名；不在前端删除字符串。

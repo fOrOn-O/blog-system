@@ -11,12 +11,14 @@ import {
 import { normalizeCommentsResponse } from '@/utils/comments'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sanitizeArticleHTML } from '@/utils/article-html'
+import { articleLoadError } from '@/utils/article-navigation'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
 const article = ref(null)
+const loadError = ref('')
 const comments = ref([])
 const loading = ref(false)
 const commentText = ref('')
@@ -44,7 +46,6 @@ function estimateReadTime(content) {
 }
 
 const messages = {
-  notFound: '文章不存在',
   deleted: '已删除',
   addedFav: '已收藏',
   removedFav: '已取消收藏',
@@ -66,8 +67,9 @@ function goBack() {
 
 async function fetchArticle() {
   loading.value = true
+  loadError.value = ''
   try {
-    const res = await getArticle(articleId.value)
+    const res = await getArticle(articleId.value, { notifyError: false })
     article.value = res.data || res
     await Promise.all([
       fetchLikeInfo(),
@@ -75,8 +77,8 @@ async function fetchArticle() {
       isAuthenticated.value ? fetchFavoriteStatus() : Promise.resolve()
     ])
   } catch (error) {
-    ElMessage.error(messages.notFound)
-    router.push('/')
+    article.value = null
+    loadError.value = articleLoadError(error)
   } finally {
     loading.value = false
   }
@@ -177,6 +179,11 @@ onMounted(() => { fetchArticle() })
 
 <template>
   <div class="detail-page" v-loading="loading">
+    <section v-if="loadError" class="container" aria-label="文章加载失败">
+      <p role="alert">{{ loadError }}</p>
+      <el-button :disabled="loading" @click="fetchArticle">重新加载</el-button>
+      <router-link v-if="isAuthenticated" to="/my-articles">返回我的文章</router-link>
+    </section>
     <div class="container" v-if="article">
       <!-- Back -->
       <div class="back-link" role="button" tabindex="0" @click="goBack" @keyup.enter="goBack">

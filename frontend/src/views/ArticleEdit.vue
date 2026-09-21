@@ -5,6 +5,7 @@ import { getOwnedArticle, createArticle, updateArticle, createDraft, saveDraft, 
 import { getTags } from '@/api/tag'
 import { uploadImage } from '@/api/upload'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { articleLoadError } from '@/utils/article-navigation'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import AgentAssistantPanel from '@/components/AgentAssistantPanel.vue'
 import ArticleDiff from '@/components/ArticleDiff.vue'
@@ -69,8 +70,8 @@ async function fetchArticle(targetVersion = null) {
   loading.value = true
   loadError.value = ''
   try {
-    const [res, history] = await Promise.all([getOwnedArticle(id), getArticleVersions(id)])
-    const snapshot = targetVersion && targetVersion !== res.data.version ? await getArticleVersion(id, targetVersion) : null
+    const [res, history] = await Promise.all([getOwnedArticle(id, { notifyError: false }), getArticleVersions(id, 1, { notifyError: false })])
+    const snapshot = targetVersion && targetVersion !== res.data.version ? await getArticleVersion(id, targetVersion, { notifyError: false }) : null
     if (seq !== loadSequence || id !== articleId.value) return
     const article = res.data
     currentArticle.value = article
@@ -80,8 +81,8 @@ async function fetchArticle(targetVersion = null) {
     historyTotal.value = history.meta.total
     historyDiff.value = null
     setEditor(snapshot?.data || article)
-  } catch {
-    if (seq === loadSequence) loadError.value = '文章或版本刷新失败，请重试。已完成的应用不会自动重试。'
+  } catch (error) {
+    if (seq === loadSequence) loadError.value = articleLoadError(error)
   } finally {
     if (seq === loadSequence) loading.value = false
   }

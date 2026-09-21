@@ -2,6 +2,8 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { askKnowledge } from '@/api/knowledge'
 import KnowledgeSources from '@/components/KnowledgeSources.vue'
+import AssistantMarkdown from '@/components/AssistantMarkdown.vue'
+import { assistantErrorMessage } from '@/api/assistant-error'
 
 const query = ref('')
 const loading = ref(false)
@@ -17,8 +19,8 @@ async function ask() {
   try {
     const answer = await askKnowledge(query.value.trim())
     if (active) result.value = answer
-  } catch {
-    if (active) error.value = '知识问答暂不可用，请确认登录后重试。'
+  } catch (failure) {
+    if (active) error.value = assistantErrorMessage(failure)
   } finally { if (active) loading.value = false }
 }
 </script>
@@ -37,7 +39,7 @@ async function ask() {
     <p v-if="error" role="alert">{{ error }}</p>
     <section v-if="result" class="card answer" aria-label="知识回答">
       <h2>{{ result.has_evidence ? '基于文章的回答' : '暂无足够依据' }}</h2>
-      <p class="answer-text">{{ result.answer }}</p>
+      <AssistantMarkdown :text="result.answer" />
       <KnowledgeSources :sources="result.sources" />
     </section>
   </main>

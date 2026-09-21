@@ -42,7 +42,8 @@ Agent 请求等待完整 JSON 响应，当前不引入 SSE、WebSocket 或持久
 
 ## HTML 与 Diff 边界
 
-聊天文字、提案摘要、Diff 的 before/after 全部用 Vue 文本插值展示；不使用 `v-html` 渲染提案。
+用户消息、提案摘要、Diff 的 before/after 用 Vue 文本插值展示；不使用 `v-html` 渲染提案。
+助手消息使用 Markdown 解析后经现有 DOMPurify 白名单清洗再显示，清洗后不追加原始 HTML。
 新 `ArticleDiff` 由历史版本比较与提案预览共用。此前前端没有历史版本/Diff 组件。
 预览沿用 Task 08 的结构化语义，格式/HTML 属性变化可能无结构差异但仍生成新版本，UI 明确提示。
 普通文章展示及编辑器载入内容复用既有 DOMPurify HTML profile，并不构造 Agent 专用 sanitizer。
@@ -74,8 +75,8 @@ Go 使用测试内存 SQLite 和测试账号，不读取本地/生产数据库�
 问题通过现有 Agent base URL 请求 `/knowledge/chat`，仅发送 query 和认证拦截器注入的 Bearer JWT。
 Python 入口按 Go 验证后的用户 ID 进行服务端限流，默认 Agent Chat / Knowledge / HTTP 同步共用 10 次/分钟；
 超限返回 429，前端只负责显示错误，不自动重试。health 不受影响。
-页面提供 loading、错误、无依据、纯文本答案和结构化来源；来源链接由数值 article_id 生成，
-标题/heading/答案不使用 v-html。每次提问独立，不发送聊天历史。
+页面提供 loading、错误、无依据、安全 Markdown 答案和结构化来源；来源链接由数值 article_id 生成，
+标题/heading 使用文本插值。每次提问独立，不发送聊天历史。
 
 ArticleEdit 助手默认“版本问答”，由 Python 强制先检索绑定的已保存版本；
 选择“写作提案”后才进入原有全文编辑提案流程，Preview/Apply 状态机不变。
@@ -90,3 +91,16 @@ ArticleEdit 助手默认“版本问答”，由 Python 强制先检索绑定的
 先 Review，再部署 Go 新 source API、Python Knowledge API 和前端；production full E2E 尚须单独验证。
 本地浏览器 E2E 新增真实链路的跨文章来源、公开版本切换、归档过滤、exact 问答和同步失败隔离；
 RAG 使用 FakeEmbedding + 内存 Qdrant，不依赖真实模型或云服务。
+
+## Production E2E 交互回归修复
+
+- 助手可展开到桌面约 80dvh；移动端留出边距并保留关闭按钮。消息独立滚动，用户上翻时不强制滚到底。
+- 输入框自动增长到最多 140px / 18dvh，之后内部滚动，不继续挤压消息区。
+- Marked 解析段落、列表、强调、代码、引用、链接和表格，DOMPurify 只允许消息排版标签，排除图片、事件、样式、SVG 和不安全链接。
+  这只是浏览器消息渲染安全，不代表 proposal HTML 已获批准或服务端存储已清洗。
+- 助手错误区分 401、403、429（展示受控 Retry-After 秒数）、4xx 校验、504 超时、5xx 上游失败；不展示后端原始异常，不自动重试。
+- 导航搜索使用 text input、单个自定义清除按钮及明确提交按钮；Enter/按钮共用 form submit。空查询不跳转。
+- 顶部文案改为“知识小助手”，路由仍是 `/knowledge`。
+- favicon 使用用户指定图片导出的 64x64 `favicon-face-v1.png`；新文件名避免沿用旧闪电图标缓存。项目没有 manifest / Apple touch icon 引用。
+- “我的文章”中当前公开文章标题保留公开详情入口；draft、archived、没有公开版本的文章进入受保护编辑页。
+  公开 API 和 Go owner 校验未放宽。文章加载失败由页面显示一次明确错误与重试入口，禁用同一请求的全局 Toast，仍执行统一 401 会话清理/登录跳转，不自动跳首页。

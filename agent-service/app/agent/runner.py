@@ -94,6 +94,8 @@ class AgentRunner:
             )
         except GraphRecursionError:
             raise AgentExecutionError("Agent reached the execution step limit") from None
+        except AgentExecutionError:
+            raise
         except Exception:
             raise AgentExecutionError("Agent execution failed") from None
         final = result["messages"][-1]

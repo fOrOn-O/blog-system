@@ -250,7 +250,8 @@ async def test_multiple_submissions_capture_only_first_success(settings):
             "改写", access_token="fake-token", workspace=AgentWorkspace(article_id=23, version_no=7), blog_client=blog,
         )
     assert result.proposal.proposed_content == proposed_html()
-    assert json.loads(model.inputs[-1][-1].content)["error"] == "proposal_already_submitted"
+    # 成功提交即确定性结束，不再给模型下一轮替换提案的机会。
+    assert len(model.inputs) == 2 and len(model.responses) == 2
 
 
 @pytest.mark.anyio
@@ -305,26 +306,42 @@ async def test_failure_after_submission_does_not_leak_capture_or_read_guard_to_n
         return httpx.Response(200, json={"code": 200, "data": version_data()})
 
     model = ScriptedModel([
-        tool_call("read_workspace_article", {}), submission(), RuntimeError("model failed after submission"),
+        tool_call("read_workspace_article", {}), submission(),
         submission(), AIMessage(content="需要先读取本次工作区版本"),
         AIMessage(content="hello"), AIMessage(content="legacy hello"),
     ])
     runner = AgentRunner(model, settings=settings)
+    from app.agent.graph import build_graph
+    from app.agent.prompts import PROPOSAL_SYSTEM_PROMPT
+    # 成功提案后已不调用模型；在图返回边界模拟故障，继续验证捕获状态不会跨请求泄漏。
+    class FailAfterFirstRun:
+        def __init__(self):
+            self.graph = build_graph(model, tools=PROPOSAL_TOOLS, system_prompt=PROPOSAL_SYSTEM_PROMPT)
+            self.captured = None
+
+        async def ainvoke(self, *args, **kwargs):
+            result = await self.graph.ainvoke(*args, **kwargs)
+            if self.captured is None:
+                self.captured = kwargs["context"].proposal_capture.proposal
+                raise RuntimeError("failure after proposal capture")
+            return result
+    failing_graph = FailAfterFirstRun()
+    runner._proposal_graph = failing_graph
     async with BlogClient(settings, transport=httpx.MockTransport(handler)) as blog:
         with pytest.raises(AgentExecutionError):
             await runner.run_with_response(
                 "编辑 A", access_token="failed-run-token", workspace=AgentWorkspace(article_id=23, version_no=7), blog_client=blog,
             )
         # 先证明失败发生前已经完成提案提交，而不是前置读取失败。
-        assert json.loads(model.inputs[2][-1].content)["data"]["proposed_content"] == proposed_html()
+        assert failing_graph.captured.proposed_content == proposed_html()
         next_run = await runner.run_with_response(
             "编辑 B", access_token="next-run-token", workspace=AgentWorkspace(article_id=24, version_no=9), blog_client=blog,
         )
         chat = await runner.run_with_response("hello", access_token="next-run-token", blog_client=blog)
         legacy = await runner.run("hello", access_token="next-run-token", blog_client=blog)
     assert next_run.proposal is None
-    assert json.loads(model.inputs[4][-1].content)["error"] == "canonical_read_required"
-    assert not any(isinstance(m, ToolMessage) for m in model.inputs[3])
+    assert json.loads(model.inputs[3][-1].content)["error"] == "canonical_read_required"
+    assert not any(isinstance(m, ToolMessage) for m in model.inputs[2])
     assert chat.model_dump() == {"answer": "hello", "proposal": None, "has_evidence": None, "sources": []}
     assert isinstance(legacy, AIMessage) and legacy.content == "legacy hello"
     assert len(requests) == 2

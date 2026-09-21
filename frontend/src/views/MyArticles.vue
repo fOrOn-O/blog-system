@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getMyArticles, deleteArticle } from '@/api/article'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { myArticlePath } from '@/utils/article-navigation'
 
 const router = useRouter()
 
@@ -51,11 +52,6 @@ function handleEditArticle(articleId) {
   router.push(`/article/edit/${articleId}`)
 }
 
-// 查看文章
-function handleViewArticle(articleId) {
-  router.push(`/article/${articleId}`)
-}
-
 // 格式式时间
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -98,7 +94,7 @@ onMounted(() => {
             :key="article.id"
             class="article-item"
           >
-            <div class="article-info" @click="handleViewArticle(article.id)">
+            <router-link class="article-info" :to="myArticlePath(article)">
               <h3 class="article-title">{{ article.title }}</h3>
               <p class="article-summary">{{ article.summary || '暂无摘要' }}</p>
               <div class="article-meta">
@@ -110,7 +106,7 @@ onMounted(() => {
                   · {{ article.comment_count || 0 }} 评论
                 </span>
               </div>
-            </div>
+            </router-link>
             <div class="article-actions">
               <button
                 class="action-btn edit"
@@ -239,6 +235,8 @@ onMounted(() => {
 }
 
 .article-info {
+  text-decoration: none;
+  color: inherit;
   flex: 1;
   cursor: pointer;
   min-width: 0;
