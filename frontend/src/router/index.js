@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getUser, isAuthenticated } from '@/utils/auth'
+import { useAuthStore } from '@/stores/auth'
 import { resolveRouteAccess } from './access-control'
 import { scrollBehavior } from './scroll-behavior'
 
@@ -96,6 +97,7 @@ router.beforeEach((to, from, next) => {
   document.title = `${to.meta.title || '博客'} - Blog System`
 
   const authenticated = isAuthenticated()
+  if (!authenticated) useAuthStore().logout()
   const redirect = resolveRouteAccess(to, {
     authenticated,
     user: getUser()

@@ -14,6 +14,8 @@ from app.core.config import get_settings
 from app.core.model import ModelConfigurationError
 from app.rag.errors import RagError
 from app.core.rate_limit import limit_user
+from app.api.chat_observability import observe_chat
+from app.core.agent_observability import record
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 bearer = HTTPBearer(auto_error=False)
@@ -36,7 +38,7 @@ def runner_factory():
     return get_agent_runner
 
 
-@router.post("/chat", response_model=AgentResponse)
+@router.post("/chat", response_model=AgentResponse, dependencies=[Depends(observe_chat)])
 async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
                factory=Depends(runner_factory)):
     if credentials is None or not credentials.credentials or not credentials.credentials.isascii() or any(c.isspace() for c in credentials.credentials):
@@ -53,6 +55,8 @@ async def chat(request: ChatRequest, credentials: HTTPAuthorizationCredentials |
             result = await factory().run_with_response(request.message, access_token=token,
                                                        workspace=request.workspace, blog_client=blog, mode=request.mode)
             if request.mode == "write" and result.proposal is None:
+                record("response", reason="proposal_missing", article_id=request.workspace.article_id,
+                       version_no=request.workspace.version_no)
                 raise AgentExecutionError(code="proposal_not_created")
             return result
     except AuthenticationError:

@@ -7,6 +7,7 @@ from langgraph.prebuilt.tool_node import ToolInvocationError
 from pydantic import Field
 
 from app.agent.context import AgentContext
+from app.core.agent_observability import tool_error
 from app.agent.errors import CanonicalReadRequiredError, MultipleProposalSubmissionsError, ProposalAlreadySubmittedError, WorkspaceRequiredError
 from app.core.rag import get_rag_service
 from app.rag.errors import RagError
@@ -58,7 +59,9 @@ def safe_tool_error(error: Exception) -> str:
     )
     for error_type, code, message in mappings:
         if isinstance(error, error_type):
+            tool_error(code)
             return json.dumps({"ok": False, "error": code, "message": message}, ensure_ascii=False)
+    tool_error("tool_error")
     return json.dumps({
         "ok": False, "error": "tool_error", "message": "工具执行失败，无法确认操作结果。"
     }, ensure_ascii=False)

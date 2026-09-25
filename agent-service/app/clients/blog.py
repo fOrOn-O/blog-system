@@ -25,6 +25,7 @@ from app.clients.models import (
     UpdateDraftInput,
 )
 from app.core.config import Settings, get_settings
+from app.core.agent_observability import snapshot_validation
 
 ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
@@ -163,7 +164,9 @@ class BlogClient:
         path = self._article_path(article_id) + f"/versions/{version_no}"
         result = await self._request("GET", path, access_token, _ArticleVersionEnvelope)
         if result.data.article_id != article_id or result.data.version_no != version_no:
+            snapshot_validation(True, False)
             raise BlogBackendError("Go backend returned a mismatched article version", method="GET", path=path)
+        snapshot_validation(True, True)
         return result.data
 
     async def create_draft(self, draft: CreateDraftInput, *, access_token: str) -> Article:
@@ -265,4 +268,6 @@ class BlogClient:
                 raise ValueError("Invalid response envelope")
             return model.model_validate(body)
         except ValueError:
+            if model is _ArticleVersionEnvelope:
+                snapshot_validation(False, None)
             raise BlogBackendError("Go backend returned an invalid response", **context) from None

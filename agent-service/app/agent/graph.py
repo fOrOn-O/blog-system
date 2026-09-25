@@ -12,6 +12,7 @@ from app.agent.errors import AgentExecutionError
 from app.agent.model_errors import model_failure
 from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.tools import AGENT_TOOLS, safe_tool_error
+from app.core.agent_observability import model_returned, observe_tool_call
 
 
 def build_graph(model: BaseChatModel, *, tools=AGENT_TOOLS, system_prompt: str = SYSTEM_PROMPT):
@@ -36,6 +37,7 @@ def build_graph(model: BaseChatModel, *, tools=AGENT_TOOLS, system_prompt: str =
             raise model_failure(error) from None
         if not isinstance(reply, AIMessage):
             raise AgentExecutionError("Model returned an invalid agent response")
+        model_returned(reply, {tool.name for tool in tools})
         if reply.invalid_tool_calls or reply.response_metadata.get("finish_reason") == "length":
             raise AgentExecutionError(code="model_output_invalid")
         return {"messages": [reply]}
@@ -45,7 +47,7 @@ def build_graph(model: BaseChatModel, *, tools=AGENT_TOOLS, system_prompt: str =
 
     graph = StateGraph(MessagesState, context_schema=AgentContext)
     graph.add_node("call_model", call_model)
-    graph.add_node("tools", ToolNode(tools, handle_tool_errors=safe_tool_error))
+    graph.add_node("tools", ToolNode(tools, handle_tool_errors=safe_tool_error, awrap_tool_call=observe_tool_call))
     graph.add_edge(START, "call_model")
     graph.add_conditional_edges("call_model", should_continue, {"tools": "tools", END: END})
     graph.add_edge("tools", "call_model")

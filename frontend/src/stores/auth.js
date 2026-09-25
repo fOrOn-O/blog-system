@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getToken, setToken, clearAuth, getUser, setUser } from '@/utils/auth'
+import { getToken, setToken, clearAuth, getUser, setUser, isAuthenticated as hasValidSession } from '@/utils/auth'
 import { login as loginApi, register as registerApi } from '@/api/auth'
 import { getProfile } from '@/api/user'
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(getToken())
-  const user = ref(getUser())
+  const token = ref(hasValidSession() ? getToken() : null)
+  const user = ref(token.value ? getUser() : null)
 
   const isAuthenticated = computed(() => !!token.value)
   const currentUser = computed(() => user.value)

@@ -116,7 +116,12 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
               @blur="searchFocused = false"
             />
             <button v-if="searchKeyword" class="clear-btn" type="button" aria-label="清空搜索" @click="searchKeyword = ''">×</button>
-            <button class="search-submit" type="submit" :disabled="!searchKeyword.trim()">搜索</button>
+            <button class="search-submit" type="submit" :disabled="!searchKeyword.trim()">
+              <span>搜索</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14m-5-5 5 5-5 5" />
+              </svg>
+            </button>
           </form>
 
           <template v-if="isAuthenticated">
@@ -307,14 +312,14 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 
 .search-wrapper {
   width: min(28vw, 320px);
-  height: 37px;
-  padding: 0 10px;
-  gap: 8px;
+  height: 42px;
+  padding: 4px 4px 4px 13px;
+  gap: 9px;
   border: 1px solid rgba(25, 39, 50, 0.14);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.58);
   color: #213b4a;
-  transition: width 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 
   svg { width: 16px; height: 16px; flex: 0 0 auto; }
 
@@ -330,21 +335,68 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
     &::placeholder { color: currentColor; opacity: 0.72; }
   }
 
-  &.focused {
-    width: min(29vw, 320px);
+  &.focused,
+  &:focus-within {
     border-color: rgba(176, 117, 50, 0.7);
     background: rgba(255, 255, 255, 0.94);
     box-shadow: 0 0 0 3px rgba(215, 164, 98, 0.14);
   }
 }
 
-.search-submit { flex-shrink: 0; padding: 4px 8px; border: 0; border-radius: 12px; background: #e8eef4; color: #17324d; cursor: pointer; }
-.search-submit:disabled { opacity: .5; cursor: default; }
+.search-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  min-width: 68px;
+  height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: #244658;
+  color: #fffdf8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.18s ease;
+  }
+
+  &:not(:disabled):hover {
+    background: #183646;
+    box-shadow: 0 2px 6px rgba(25, 39, 50, 0.12);
+    svg { transform: translateX(2px); }
+  }
+
+  &:not(:disabled):active { box-shadow: none; }
+
+  &:disabled {
+    background: #eeefeb;
+    color: #7b888b;
+    cursor: default;
+  }
+}
 
 .nav--home:not(.is-scrolled) .search-wrapper {
   border-color: rgba(255, 255, 255, 0.22);
   background: rgba(1, 16, 30, 0.25);
   color: #f7f3ea;
+
+  .search-submit {
+    background: #d7a462;
+    color: #102332;
+
+    &:not(:disabled):hover { background: #edbd7b; }
+    &:disabled { background: rgba(255, 255, 255, 0.09); color: rgba(247, 243, 234, 0.55); }
+  }
 }
 
 .clear-btn,
@@ -358,6 +410,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .clear-btn {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 18px;
@@ -411,6 +464,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
 .btn-write,
 .btn-join,
 .nav-user,
+.search-submit,
 .clear-btn {
   &:focus-visible {
     outline: 2px solid #d7a462;
@@ -482,7 +536,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   .nav-tools { margin-left: auto; }
   .nav-inner { flex-wrap: wrap; }
   .nav-tools { min-width: 0; }
-  .search-wrapper, .search-wrapper.focused { width: min(42vw, 260px); padding: 0 8px; gap: 4px; }
+  .search-wrapper, .search-wrapper.focused { width: min(42vw, 260px); padding: 4px 4px 4px 11px; gap: 7px; }
   .btn-login { display: none; }
   .main--home { margin-top: -68px; }
 }
@@ -500,5 +554,10 @@ onBeforeUnmount(() => window.removeEventListener('scroll', handleScroll))
   .btn-join span { margin: 0; font-size: 16px; }
   .footer-inner { align-items: flex-start; flex-direction: column; }
   .footer-meta { gap: 10px; flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-wrapper, .search-submit, .search-submit svg { transition: none; }
+  .search-submit:not(:disabled):hover svg { transform: none; }
 }
 </style>

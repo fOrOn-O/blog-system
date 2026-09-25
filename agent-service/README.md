@@ -673,3 +673,25 @@ HTTP 显式 `mode=write` 必须返回结构化 proposal；如果模型只给出�
 `model_timeout` 为 504。应用用户额度超限仍是 429 + `Retry-After`，不混淆模型配额与应用限流。
 模型请求故障日志只记录固定 stage/code，不输出异常原文、请求正文、JWT、密钥或 traceback。
 共享回复策略使用面向用户的产品语言，不主动展示内部工具名；不在前端删除字符串。
+
+### 写作提案诊断日志
+
+`/api/v1/agent/chat` 为每次请求生成服务端 UUID；正常响应和已处理的 HTTP 错误通过
+`X-Request-ID` 返回该 ID。不采用客户端传入的任意 ID，避免凭据被当作日志标识。
+在 `LOG_LEVEL=INFO` 时，以 `agent_observation` 为前缀输出 JSON 元数据：
+
+- `stage=model`：模型返回轮次、finish_reason、工具数量/名称、无效工具调用数量、正文是否为空和字符数。
+- `stage=tool`：失败工具和固定错误分类 `reason`；未知工具名归一化为 `unregistered_tool`。
+- `stage=read_workspace_article`：可信 article/version，以及响应结构、版本身份校验结果。
+  `null` 表示尚未执行，`false` 表示校验失败，`true` 表示校验成功。
+- `stage=submit_article_edit_proposal`：`proposal_stage` 依次为 `entered`、`guard_passed`、
+  `canonical_recheck_passed`、`validation_passed`、`capture_written`。
+- `stage=runner`：模型返回总轮次、是否读取快照、是否捕获提案。
+- `stage=response, reason=proposal_missing`：写作运行已返回，但没有提案。
+
+按同一 `request_id` 查看：第二轮工具数量为零且此前无工具错误，表示模型直接结束；
+如果此前已有工具错误，则可以看到其固定分类和最后通过的提交阶段。
+工具错误在前只证明执行顺序，模型是否因此结束仍需结合该次结构信息判断。
+本地构造的成功结束语不计入模型轮次。诊断上下文在请求/运行退出时清理，并隔离并发调用。
+日志不记录正文、提案 HTML、工具参数、完整 prompt、JWT、API Key 或原始异常内容。
+这些日志不增加模型调用、不改变决策/校验/HTTP 状态，也不代表提案已经保存。

@@ -15,6 +15,7 @@ from app.rag.service import ArticleRagService
 from app.core.rag import get_rag_service
 from app.knowledge.answer import grounded_answer
 from app.knowledge.models import KnowledgeHit
+from app.core.agent_observability import record, run_observation
 
 
 class AgentRunner:
@@ -86,19 +87,24 @@ class AgentRunner:
             return await invoke(client)
 
     async def _invoke(self, message: str, context: AgentContext, *, graph=None) -> AIMessage:
-        try:
-            result = await (graph if graph is not None else self.graph).ainvoke(
-                {"messages": [HumanMessage(content=message)]},
-                context=context,
-                config={"recursion_limit": self.settings.agent_recursion_limit},
-            )
-        except GraphRecursionError:
-            raise AgentExecutionError("Agent reached the execution step limit") from None
-        except AgentExecutionError:
-            raise
-        except Exception:
-            raise AgentExecutionError("Agent execution failed") from None
-        final = result["messages"][-1]
-        if not isinstance(final, AIMessage) or final.tool_calls:
-            raise AgentExecutionError("Agent did not produce a final answer")
-        return final
+        with run_observation() as observation:
+            try:
+                result = await (graph if graph is not None else self.graph).ainvoke(
+                    {"messages": [HumanMessage(content=message)]},
+                    context=context,
+                    config={"recursion_limit": self.settings.agent_recursion_limit},
+                )
+            except GraphRecursionError:
+                raise AgentExecutionError("Agent reached the execution step limit") from None
+            except AgentExecutionError:
+                raise
+            except Exception:
+                raise AgentExecutionError("Agent execution failed") from None
+            final = result["messages"][-1]
+            if not isinstance(final, AIMessage) or final.tool_calls:
+                raise AgentExecutionError("Agent did not produce a final answer")
+            capture = context.proposal_capture
+            record("runner", model_rounds=observation.model_rounds,
+                   canonical_present=capture is not None and capture.canonical_version is not None,
+                   proposal_present=capture is not None and capture.proposal is not None)
+            return final

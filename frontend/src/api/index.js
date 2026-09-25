@@ -1,5 +1,6 @@
 import axios from 'axios'
-import { getToken, clearAuth } from '@/utils/auth'
+import { getToken } from '@/utils/auth'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { getApiErrorFeedback } from './error-feedback'
@@ -48,7 +49,7 @@ api.interceptors.response.use(
       if (error.config?.notifyError !== false) ElMessage.error(assistantRequest ? assistantErrorMessage(error) : feedback.message)
 
       if (feedback.clearSession) {
-        clearAuth()
+        useAuthStore().logout()
       }
 
       if (feedback.redirectToLogin && router.currentRoute.value.name !== 'Login') {

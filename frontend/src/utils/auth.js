@@ -40,5 +40,20 @@ export function clearAuth() {
 
 // 检查是否已登录
 export function isAuthenticated() {
-  return !!getToken()
+  const parts = getToken()?.split('.')
+  if (parts?.length === 3 && parts.every(Boolean)) {
+    try {
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+      const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0))
+      const payload = JSON.parse(new TextDecoder().decode(bytes))
+      // 此处仅判断本地会话是否过期；签名和权限仍由后端验证。
+      if (Number.isFinite(payload?.exp) && payload.exp > Date.now() / 1000) {
+        return true
+      }
+    } catch {
+      // 损坏或无法解析的 Token 同样不能作为已登录状态。
+    }
+  }
+  clearAuth()
+  return false
 }
